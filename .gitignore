@@ -1,0 +1,26 @@
+target/
+out/
+.idea/
+*.iml
+.vscode/
+.DS_Store
+
+### Scala / metals / bloop ###
+.bsp/
+.bloop/
+.metals/
+.scala-build/
+
+# Compiled Scala.js output (generated)
+/jvm/src/main/resources/static/dist/
+
+# Logs
+logs/
+/jvm/logs
+
+# Node.js dependencies
+/node_modules
+/js/node_modules
+
+# Environment secrets
+.env

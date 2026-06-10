@@ -1,0 +1,14 @@
+{
+  "name": "gigadev",
+  "version": "0.1.0",
+  "description": "Gigadev — Scala 3 + Cask + ScalaJS + Laminar",
+  "private": true,
+  "scripts": {
+    "minify:assets": "node scripts/minify-static-with-vite.mjs",
+    "build:prod:assets": "npm run minify:assets"
+  },
+  "devDependencies": {
+    "jsdom": "^22.1.0",
+    "vite": "^7.1.7"
+  }
+}

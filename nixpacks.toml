@@ -1,0 +1,15 @@
+[phases.setup]
+nixPkgs = ["jdk17", "sbt", "nodejs"]
+
+[phases.build]
+cmds = [
+  "sbt js/fullLinkJS",
+  "npm ci",
+  "npm run minify:assets",
+  "sbt jvm/stage",
+  "mkdir -p target/universal",
+  "cp -r jvm/target/universal/stage target/universal/"
+]
+
+[start]
+cmd = "./target/universal/stage/bin/main"
