@@ -1,0 +1,12 @@
+{
+  "name": "Gigadev",
+  "short_name": "gigadev",
+  "description": "Gigadev — Scala 3 + Cask + ScalaJS + Laminar",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0f",
+  "theme_color": "#4ade80",
+  "icons": [
+    { "src": "/static/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

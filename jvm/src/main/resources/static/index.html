@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Gigadev</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#4ade80" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
+    <link rel="manifest" href="/static/manifest.json" />
+    <link rel="stylesheet" href="/static/dist/app-bundle.css" />
+    <!-- Register the service worker for offline support. -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js', { scope: '/' })
+          .then(function (reg) { console.log('[App] Service Worker registered:', reg.scope); })
+          .catch(function (err) { console.warn('[App] Service Worker registration failed:', err); });
+      }
+    </script>
+    <!-- Dev hot-reload: poll the .livereload marker written by dev-watch.sh.
+         Only runs on localhost, so it is inert in production. -->
+    <script>
+      (function () {
+        if (location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') return;
+        var marker = '/static/dist/.livereload';
+        var last = null;
+        function swapCss() {
+          document.querySelectorAll('link[rel="stylesheet"]').forEach(function (link) {
+            var clone = link.cloneNode();
+            clone.href = link.href.split('?')[0] + '?hot=' + Date.now();
+            clone.addEventListener('load', function () { link.remove(); });
+            link.parentNode.insertBefore(clone, link.nextSibling);
+          });
+          console.log('[hot-reload] CSS swapped');
+        }
+        function poll() {
+          fetch(marker, { cache: 'no-store' })
+            .then(function (r) { return r.ok ? r.text() : null; })
+            .then(function (text) {
+              if (text == null) return;
+              var token = text.trim();
+              if (last === null) { last = token; return; }
+              if (token === last) return;
+              last = token;
+              if ((token.split(/\s+/)[1] || '') === 'css') swapCss();
+              else location.reload();
+            })
+            .catch(function () { /* server restarting; ignore */ });
+        }
+        setInterval(poll, 1000);
+        poll();
+      })();
+    </script>
+    <script defer src="/static/dist/main.js"></script>
+    <noscript>This app requires JavaScript. Please enable it and reload.</noscript>
+    <style>@keyframes app-spin{to{transform:rotate(360deg)}}</style>
+  </head>
+  <body>
+    <div id="app" class="app-container">
+      <div class="app-loader">
+        <div class="app-spinner"></div>
+        <div class="app-loading-text">Loading Gigadev…</div>
+      </div>
+    </div>
+  </body>
+</html>
