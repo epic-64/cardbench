@@ -224,8 +224,8 @@ linger until fulfilled or they expire).
   Money penalty if ignored. *Lever:* **Build** / prioritizing it.
 - **Disaster** (data-loss) — lose Reputation equal to the Debt cards in your
   discard. *Lever:* **Backup** cancels it; low Debt shrinks it.
-- **Quality check** (Bug / Audit) — a shipped feature is penalized if untested.
-  *Lever:* **Test** played on that feature.
+- **Quality check** (Bug / Audit) — penalises you for shipping without QA.
+  *Lever:* an armed **Test** cancels it (symmetric to Backup vs. Disaster).
 - **Morale / DX** (Burnout) — 3+ Debt cards in hand costs you an action next
   sprint. *Lever:* **Refactor** to keep Debt low. No card cancels it.
 - **Pivot** (Scope change) — an Incoming request's shape changes. *Lever:*
@@ -279,30 +279,108 @@ conversions come once the core loop is proven fun.
 
 ---
 
-## A sprint (one turn), step by step
+## The turn, end to end
 
-1. **Reveal an Event** from the Event Deck and apply/queue it (request, pivot,
-   disaster roll, morale check).
-2. **Draw** up to your hand size (e.g. 5).
-3. **Take up to N actions** (Capacity): play cards to build features, refactor,
-   test, arm backups, and fulfill requests.
-4. **Resolve** fulfilled requests → gain ★ or ₿ per the request. Apply Debt from
-   each Build.
-5. **Pay salaries** → lose ₿ upkeep. If this bankrupts you, the run ends.
-6. **Sprint end**: unmet obligations cost ★; expired requests lapse. Then
-   **discard your entire hand** — every card, played *and* unplayed, goes to the
-   discard pile. You do **not** carry cards over between sprints.
-   When the Dev Deck runs out, shuffle the discard (Debt and all) into a fresh
-   one.
+This is the authoritative walkthrough. A **turn = one sprint**. A run is several
+sprints per act × 3 acts (see *Run structure*). Numbers below (hand size 5,
+3 actions, −1₿ salary) are placeholders for the tuning pass.
 
-**Why full discard?** It's what makes Debt bite. Because your whole hand cycles
-every sprint, Debt cards keep coming back around to clog future hands — you
-can't just hold them out of the way. It also means you see your whole deck
-regularly, so Refactoring to thin it genuinely pays off.
+### Everything on the table
 
-**Persistent cards are the exception.** A **Test** attached to a feature and an
-armed **Backup** sit in a play area, not your hand — they stay until the event
-they guard against fires (or the feature leaves play), then go to discard.
+**Decks & piles**
+
+- **Dev Deck** (draw pile) — your fixed v1 deck of the five card types; you draw
+  from here.
+- **Hand** — cards drawn for the current sprint (target size 5).
+- **Discard pile** — spent and discarded cards; reshuffled into the Dev Deck
+  when it runs out.
+- **Play area** — armed **Test** and armed **Backup** wait here until the threat
+  they guard fires.
+- **Active Requests** — Customer / Stakeholder requests you're working, each
+  with a deadline counter.
+- **Incoming slot** — telegraphed Disasters / Pivots waiting to resolve (see timing).
+- **Event Deck** (+ its discard) — the world's actions, shuffled per act; one
+  card revealed per sprint.
+- **Debt supply** — shared stack of identical Debt cards; Build draws from it,
+  Refactor returns to it.
+
+**Resources** (full detail in *Resources* and *cash vs. cred*)
+
+- **Capacity** — 3 actions per sprint; resets each sprint, not stored.
+- **Money ₿** — floor: bankruptcy ends the run; ceiling: *The Exit*; drained by
+  salaries.
+- **Reputation ★** — floor: 0 ends the run; ceiling: *The Legend*.
+- **Tech Debt** — the Debt cards in your deck; not a number — you literally hold
+  the junk.
+
+### Telegraph timing (the one rule to internalise)
+
+A **Disaster or Pivot** drawn this sprint does **not** fire now. It goes
+face-up into the **Incoming slot** and **resolves at the end of the *next*
+sprint** — so you get one full Action phase to arm a defense (or decide the hit
+is small enough to eat). Requests and Boons resolve immediately; only Disasters
+and Pivots are telegraphed.
+
+### The five phases of a sprint
+
+**1 — Event phase.** Reveal the top Event card and place it:
+- *Request* (Customer → ★ / Stakeholder → ₿): put it in **Active Requests** with
+  its deadline counter.
+- *Disaster / Pivot*: put it in the **Incoming slot** (resolves end of next sprint).
+- *Burnout*: check it now — 3+ Debt cards in hand means you take only **2**
+  actions this sprint instead of 3.
+- *Quiet Sprint / Boon*: apply immediately (e.g. Quiet Sprint = no event at all).
+
+**2 — Draw phase.** Draw from the Dev Deck until your hand holds 5. If the Dev
+Deck empties mid-draw, shuffle the discard (Debt and all) into a new Dev Deck
+and continue.
+
+**3 — Action phase.** Take up to 3 actions (2 if Burned out). Each action plays
+one card from hand:
+- **Build** → assign it to an Active Request, covering part of its icon shape.
+  Take **1 Debt card** from the supply into your discard. A request is fulfilled
+  the moment its shape is fully covered.
+- **Agile Maneuver** → recolor one icon (on a request or a Build) to make a shape fit.
+- **Refactor** → return 1 Debt card from hand or discard to the supply.
+- **Test** / **Backup** → place into the **Play area**, arming it against the
+  next Bug/Audit (Test) or data-loss Disaster (Backup).
+
+**4 — Resolution phase**, in order:
+   a. **Incoming resolves** — any telegraphed card now due fires. An armed
+      defense cancels its matching threat (and is discarded, used up); otherwise
+      apply the effect (e.g. lose ★ equal to Debt cards in your discard).
+   b. **Fulfilled requests pay out** — gain ★ or ₿ per the request; it leaves play.
+   c. **Expired requests lapse** — tick every Active Request's deadline down; any
+      that hit zero unfulfilled inflict their ignore penalty and are discarded.
+
+**5 — Upkeep phase.**
+   a. **Pay salaries** — lose 1₿. If this drops Money below 0, the run **ends**
+      (bankruptcy).
+   b. **Check floors** — if Reputation is 0, the run **ends** (collapse).
+   c. **Discard your entire hand** — every card, played *and* unplayed, goes to
+      the discard pile. You carry **nothing** over. (Armed Test/Backup in the
+      Play area are the sole exception — they stay until consumed.)
+
+Then the next sprint begins. At the end of Act 3, surviving players check their
+*Win conditions* for which ending they reached.
+
+**Why full discard?** It's what makes Debt bite: because your whole hand cycles
+every sprint, Debt cards keep coming back to clog future hands — you can't hold
+them aside. It also means you see your whole deck regularly, so Refactoring to
+thin it genuinely pays off.
+
+### One sprint, concretely (telegraph in action)
+
+- **Sprint 4, Event phase:** you reveal *Prod DB Gone* (Disaster). It goes to
+  **Incoming**, marked to resolve at the end of Sprint 5. Nothing happens yet.
+- **Sprint 4, Action phase:** you have a Backup in hand but spend your 3 actions
+  clearing a lucrative Stakeholder Request instead, betting you'll draw into a
+  defense. Salaries tick; sprint ends.
+- **Sprint 5, Action phase:** the Disaster is now about to resolve. You play
+  **Backup** into the Play area (1 action).
+- **Sprint 5, Resolution phase:** Incoming fires — the armed Backup **cancels**
+  *Prod DB Gone* and is used up. Had you not armed it, you'd have lost ★ equal to
+  the Debt cards sitting in your discard. The gamble paid off.
 
 Repeat for the act.
 
