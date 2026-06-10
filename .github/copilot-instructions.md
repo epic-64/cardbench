@@ -44,6 +44,10 @@ Style considerations:
 - never use a rounded border-left, it looks horrendous.
 - Whenever you write or encounter repetitive CSS styles, please extract them into CSS variables.
 
+File size:
+- most files should stay under 500 lines
+- if a file grows beyond 300 lines, consider refactoring it into multiple files
+
 Important Laminar Concepts:
 - when using signals that update frequently, always use `.distinct` on the signal to prevent unnecessary DOM updates
   - without `.distinct`, every signal emission triggers a re-render even if the value hasn't changed
