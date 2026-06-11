@@ -52,6 +52,58 @@ class EngineSpec extends AnyWordSpec with Matchers:
     ),
   )
 
+  // A "build" card that, when played, deals 2 debt into the discard pile and
+  // draws 1 feature into the building zone — mirroring the engine's headline
+  // example — plus a table with those source and (persistent, empty) target piles.
+  private val playCatalog = CardCatalog(
+    List(
+      CardDef(
+        CardDefId("build"),
+        "#3b82f6",
+        "Build",
+        "Ship a feature.",
+        effects = List(
+          Effect.Deal(StackId("debt"), StackId("discard"), 2),
+          Effect.Deal(StackId("features"), StackId("build-zone"), 1),
+        ),
+      ),
+      CardDef(CardDefId("debt"), "#6b7280", "Tech Debt", "Dead weight."),
+      CardDef(CardDefId("feature"), "#16a34a", "Feature", "A shipped feature."),
+    ),
+  )
+  private val playSetup = GameSetup(
+    List(
+      StackSpec(StackId("hand"), "Hand", Position(0, 0), Facing.Up, List(SpawnSpec(CardDefId("build"), 1))),
+      StackSpec(StackId("debt"), "Debt", Position(0, 0), Facing.Down, List(SpawnSpec(CardDefId("debt"), 5))),
+      StackSpec(StackId("features"), "Features", Position(0, 0), Facing.Down, List(SpawnSpec(CardDefId("feature"), 3))),
+      StackSpec(StackId("discard"), "Discard", Position(0, 0), Facing.Up, Nil, persistent = true),
+      StackSpec(StackId("build-zone"), "Building", Position(0, 0), Facing.Up, Nil, persistent = true),
+      StackSpec(StackId("in-play"), "In Play", Position(0, 0), Facing.Up, Nil, persistent = true),
+    ),
+  )
+
+  // The same table, but the debt pile holds fewer cards than Build tries to deal,
+  // so resolving its effects must fail partway and roll back.
+  private val drained = GameSetup(
+    List(
+      StackSpec(StackId("hand"), "Hand", Position(0, 0), Facing.Up, List(SpawnSpec(CardDefId("build"), 1))),
+      StackSpec(StackId("debt"), "Debt", Position(0, 0), Facing.Down, List(SpawnSpec(CardDefId("debt"), 1)), persistent = true),
+      StackSpec(StackId("features"), "Features", Position(0, 0), Facing.Down, List(SpawnSpec(CardDefId("feature"), 3))),
+      StackSpec(StackId("discard"), "Discard", Position(0, 0), Facing.Up, Nil, persistent = true),
+      StackSpec(StackId("build-zone"), "Building", Position(0, 0), Facing.Up, Nil, persistent = true),
+      StackSpec(StackId("in-play"), "In Play", Position(0, 0), Facing.Up, Nil, persistent = true),
+    ),
+  )
+
+  // One persistent pile and one ordinary pile, each holding a single card, to
+  // show only the ordinary one disappears once emptied.
+  private val essential = GameSetup(
+    List(
+      StackSpec(StackId("a"), "A", Position(0, 0), Facing.Up, List(SpawnSpec(CardDefId("build"), 1)), persistent = true),
+      StackSpec(StackId("b"), "B", Position(0, 0), Facing.Up, List(SpawnSpec(CardDefId("build"), 1))),
+    ),
+  )
+
   private def stackOf(state: GameState, id: StackId): Stack =
     state.stacks.find(_.id == id).get
 
@@ -179,6 +231,37 @@ class EngineSpec extends AnyWordSpec with Matchers:
       out.stacks.exists(_.id == StackId("a")) shouldBe false
       stackOf(out, StackId("loose")).cards.map(_.id) shouldBe List(CardId("a#0"))
 
+  "A persistent stack" should:
+
+    "stay on the table, empty, once its last card leaves" in:
+      val moved = Engine.move(Engine.setup(catalog, essential), CardId("a#0"), StackId("b")).toOption.get
+      moved.stacks.exists(_.id == StackId("a")) shouldBe true
+      stackOf(moved, StackId("a")).cards shouldBe empty
+
+    "still let an ordinary stack vanish when emptied" in:
+      val moved = Engine.move(Engine.setup(catalog, essential), CardId("b#0"), StackId("a")).toOption.get
+      moved.stacks.exists(_.id == StackId("b")) shouldBe false
+
+  "Engine.play" should:
+
+    "resolve the card's effects then move the played card onto the target" in:
+      val state  = Engine.setup(playCatalog, playSetup)
+      val played = Engine.play(state, CardId("hand#0"), StackId("in-play")).toOption.get
+      stackOf(played, StackId("discard")).cards.size shouldBe 2
+      stackOf(played, StackId("build-zone")).cards.size shouldBe 1
+      stackOf(played, StackId("debt")).cards.size shouldBe 3
+      stackOf(played, StackId("features")).cards.size shouldBe 2
+      stackOf(played, StackId("in-play")).cards.map(_.id) shouldBe List(CardId("hand#0"))
+
+    "reject an unknown card" in:
+      Engine.play(Engine.setup(playCatalog, playSetup), CardId("ghost"), StackId("in-play")) shouldBe Left(
+        EngineError.UnknownCard(CardId("ghost")),
+      )
+
+    "leave the table untouched when an effect over-draws its source" in:
+      val state = Engine.setup(playCatalog, drained)
+      Engine.play(state, CardId("hand#0"), StackId("in-play")) shouldBe Left(EngineError.EmptyStack(StackId("debt")))
+
   "JSON codecs" should:
 
     "round-trip a catalog unchanged" in:
@@ -186,3 +269,9 @@ class EngineSpec extends AnyWordSpec with Matchers:
 
     "round-trip a setup unchanged" in:
       read[GameSetup](write(setup)) shouldBe setup
+
+    "round-trip a catalog carrying card effects unchanged" in:
+      read[CardCatalog](write(playCatalog)) shouldBe playCatalog
+
+    "round-trip a setup with persistent stacks unchanged" in:
+      read[GameSetup](write(playSetup)) shouldBe playSetup

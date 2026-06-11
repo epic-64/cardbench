@@ -23,7 +23,14 @@ object Engine:
       val ordered = spec.arrangement match
         case Arrangement.Shuffled => scala.util.Random(seed ^ spec.id.value.hashCode.toLong).shuffle(instances)
         case Arrangement.Ordered  => instances
-      Stack(spec.id, spec.label, spec.position, ordered, shuffled = spec.arrangement == Arrangement.Shuffled)
+      Stack(
+        spec.id,
+        spec.label,
+        spec.position,
+        ordered,
+        shuffled = spec.arrangement == Arrangement.Shuffled,
+        persistent = spec.persistent,
+      )
     GameState(defs, stacks)
 
   /** Reorder one stack using a seeded RNG. Same seed ⇒ same order. Marks the
@@ -57,6 +64,21 @@ object Engine:
       val placed = without.map(s => if s.id == to then s.copy(cards = instance :: s.cards, shuffled = false) else s)
       state.copy(stacks = dropEmpty(placed))
 
+  /** Play a card: resolve its definition's effects in order, then move the
+    * played instance onto `to`. Effects are threaded through `Either`, so any
+    * failure (e.g. an effect dealing from an empty stack) aborts the whole play
+    * and leaves the original state untouched — playing a card is all-or-nothing.
+    */
+  def play(state: GameState, card: CardId, to: StackId): Either[EngineError, GameState] =
+    for
+      instance <- findCard(state, card).toRight(UnknownCard(card))
+      cardDef  <- state.catalog.get(instance.defId).toRight(UnknownCardDef(instance.defId))
+      _        <- find(state, to)
+      resolved <- cardDef.effects.foldLeft[Either[EngineError, GameState]](Right(state)):
+                    (acc, effect) => acc.flatMap(s => applyEffect(s, effect))
+      result   <- move(resolved, card, to)
+    yield result
+
   /** Flip a single card between Up and Down; nothing else changes. */
   def flip(state: GameState, card: CardId): Either[EngineError, GameState] =
     findCard(state, card).toRight(UnknownCard(card)).map: _ =>
@@ -88,6 +110,15 @@ object Engine:
 
   // ── helpers ────────────────────────────────────────────────────────────────
 
+  /** Resolve one effect against the table. `Deal` is just `count` repeated
+    * single deals, threaded through `Either` so an over-draw surfaces its error.
+    */
+  private def applyEffect(state: GameState, effect: Effect): Either[EngineError, GameState] =
+    effect match
+      case Effect.Deal(from, to, count) =>
+        List.fill(count)(()).foldLeft[Either[EngineError, GameState]](Right(state)):
+          (acc, _) => acc.flatMap(s => deal(s, from, to))
+
   private def find(state: GameState, id: StackId): Either[EngineError, Stack] =
     state.stacks.find(_.id == id).toRight(UnknownStack(id))
 
@@ -97,8 +128,11 @@ object Engine:
   private def replaceStack(state: GameState, stack: Stack): GameState =
     state.copy(stacks = state.stacks.map(s => if s.id == stack.id then stack else s))
 
-  /** A stack with no cards ceases to exist. */
-  private def dropEmpty(stacks: List[Stack]): List[Stack] = stacks.filter(_.cards.nonEmpty)
+  /** A stack with no cards ceases to exist — unless it is `persistent`, an
+    * essential pile that stays on the table so effects can keep targeting it.
+    */
+  private def dropEmpty(stacks: List[Stack]): List[Stack] =
+    stacks.filter(s => s.cards.nonEmpty || s.persistent)
 
   private def toggle(f: Facing): Facing = f match
     case Facing.Up   => Facing.Down

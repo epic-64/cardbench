@@ -254,6 +254,34 @@ part of this engine.
 
 ---
 
+## v0.1 — card effects & essential stacks
+
+A small, opt-in step beyond the bare table, still game-agnostic: cards can carry
+*authored effects*, and stacks can be marked *essential*.
+
+- **Effects are data on a `CardDef`.** The vocabulary is one primitive,
+  `Effect.Deal(from, to, count)` — move `count` cards from the top of one stack
+  onto another. A `CardDef` with no effects is inert. Richer behaviour composes
+  from more `Deal`s; the enum is the place to grow it.
+- **`Engine.play(state, card, to)`** resolves the card's effects in order, then
+  moves the played instance onto `to`. Effects are threaded through `Either`, so
+  a failing effect (e.g. dealing from an empty pile) aborts the whole play and
+  leaves the original state untouched — playing is all-or-nothing.
+- **Persistent stacks.** A `Stack`/`StackSpec` flagged `persistent` stays on the
+  table even at zero cards, so a player's deck, discard, or building zone can
+  always be targeted by an effect. Ordinary stacks still vanish when emptied.
+
+Example (the `build` card in `SampleGame`): playing it deals two Tech Debt into
+the player's discard and draws one feature into the building zone, then the build
+card itself lands wherever `play` is told to put it.
+
+| #  | Goal                                  | Entry point         | Done when                                                                                              |
+|----|---------------------------------------|---------------------|-------------------------------------------------------------------------------------------------------|
+| 10 | **Essential (persistent) stacks**     | `persistent` flag   | An emptied persistent stack stays on the table; an ordinary one still vanishes; effects can target it. |
+| 11 | **Card effects + play**               | `Engine.play`       | Playing a card resolves its `Deal` effects in order then relocates it; a failing effect rolls back.    |
+
+---
+
 ## Deliberately out of scope for v0
 
 - A **hand** (cards are placed on the table; no private zone).
