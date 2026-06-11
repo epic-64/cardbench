@@ -64,6 +64,15 @@
   cursor: grabbing;
 }
 
+/* 2+ cards: offset silhouettes behind the top card fake a layered deck. */
+.card-stacked {
+  box-shadow:
+    3px 3px 0 0 var(--surface),
+    3px 3px 0 1px var(--border-color),
+    6px 6px 0 0 var(--surface),
+    6px 6px 0 1px var(--border-color);
+}
+
 .card-empty {
   border-style: dashed;
   align-items: center;

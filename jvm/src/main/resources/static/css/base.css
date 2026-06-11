@@ -6,7 +6,8 @@
   --accent: #b884ff;
   --radius: 10px;
   --gap: 1rem;
-  --border: 1px solid rgba(255, 255, 255, 0.06);
+  --border-color: rgba(255, 255, 255, 0.06);
+  --border: 1px solid var(--border-color);
   --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
