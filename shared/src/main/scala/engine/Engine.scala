@@ -32,7 +32,9 @@ object Engine:
       result <- move(state, top.id, to)
     yield result
 
-  /** Move a specific card instance to the top of another stack. */
+  /** Move a specific card instance to the top of another stack. A source stack
+    * left with no cards ceases to exist.
+    */
   def move(state: GameState, card: CardId, to: StackId): Either[EngineError, GameState] =
     for
       instance <- findCard(state, card).toRight(UnknownCard(card))
@@ -40,7 +42,7 @@ object Engine:
     yield
       val without = state.stacks.map(s => s.copy(cards = s.cards.filterNot(_.id == card)))
       val placed  = without.map(s => if s.id == to then s.copy(cards = instance :: s.cards) else s)
-      state.copy(stacks = placed)
+      state.copy(stacks = dropEmpty(placed))
 
   /** Flip a single card between Up and Down; nothing else changes. */
   def flip(state: GameState, card: CardId): Either[EngineError, GameState] =
@@ -65,7 +67,7 @@ object Engine:
     findCard(state, card).toRight(UnknownCard(card)).map: instance =>
       val without = state.stacks.map(s => s.copy(cards = s.cards.filterNot(_.id == card)))
       val created = Stack(newStack, "", to, List(instance))
-      state.copy(stacks = without :+ created)
+      state.copy(stacks = dropEmpty(without :+ created))
 
   // ── helpers ────────────────────────────────────────────────────────────────
 
@@ -77,6 +79,9 @@ object Engine:
 
   private def replaceStack(state: GameState, stack: Stack): GameState =
     state.copy(stacks = state.stacks.map(s => if s.id == stack.id then stack else s))
+
+  /** A stack with no cards ceases to exist. */
+  private def dropEmpty(stacks: List[Stack]): List[Stack] = stacks.filter(_.cards.nonEmpty)
 
   private def toggle(f: Facing): Facing = f match
     case Facing.Up   => Facing.Down
