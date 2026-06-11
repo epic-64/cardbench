@@ -7,10 +7,15 @@ object SampleGame:
 
   val catalog: CardCatalog = CardCatalog(
     List(
+      // action cards
       CardDef(CardDefId("build"), "#3b82f6", "Build", "Ship a feature to fulfil a Request."),
       CardDef(CardDefId("refactor"), "#22c55e", "Refactor", "Trash 1 Debt card."),
+
+      // addons
       CardDef(CardDefId("test"), "#eab308", "Test", "Prevent the next Bug / Audit event."),
       CardDef(CardDefId("backup"), "#a855f7", "Backup", "Prevent the next data-loss disaster."),
+
+      // special
       CardDef(CardDefId("debt"), "#6b7280", "Tech Debt", "Dead weight. Clogs your hand."),
     ),
   )
@@ -33,7 +38,7 @@ object SampleGame:
         StackId("tools"),
         "Tools",
         Position(260, 40),
-        Facing.Up,
+        Facing.Down,
         List(
           SpawnSpec(CardDefId("test"), 2),
           SpawnSpec(CardDefId("backup"), 2),
