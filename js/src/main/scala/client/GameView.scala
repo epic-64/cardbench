@@ -2,6 +2,7 @@ package client
 
 import com.raquo.laminar.api.L.*
 import org.scalajs.dom
+import scala.scalajs.js
 import engine.*
 
 /** Throwaway playtest shell: one `Var[GameState]`, every verb an `update`.
@@ -9,23 +10,28 @@ import engine.*
   * The board is free-form. Drag a card to split it off onto empty space (a new
   * stack) or drop it on another stack to combine. Drag a stack's ⠿ handle to
   * move the whole pile. Click a card to flip it.
+  *
+  * Cards use HTML5 drag-and-drop (its drop targets give us "combine onto stack"
+  * for free). Stack moving uses pointer events instead: the stack follows the
+  * cursor live and commits the exact pixel on release — no drag threshold, no
+  * ghost-vs-drop mismatch.
   */
 object GameView:
 
-  // What the user is currently dragging, plus the grab offset within the dragged
-  // element so the drop lands without jumping. JS is single-threaded, so a plain
-  // mutable holder is safe here.
-  private enum Drag:
-    case OfCard(id: CardId, offX: Int, offY: Int)
-    case OfStack(id: StackId, offX: Int, offY: Int)
+  // A card mid-drag, with the grab offset within it so the drop lands without
+  // jumping. JS is single-threaded, so plain mutable holders are safe here.
+  private final case class CardDrag(id: CardId, offX: Int, offY: Int)
+  // A stack mid-move: the live DOM element plus the grab offset within it.
+  private final case class StackDrag(el: dom.html.Element, grabX: Int, grabY: Int)
 
   def view(): Element =
     val initial = Engine.setup(SampleGame.catalog, SampleGame.setup)
     val state   = Var(initial)
     val catalog = initial.catalog
 
-    var drag: Option[Drag] = None
-    var looseSeq           = 0 // supplies fresh ids for stacks split off the board
+    var dragCard: Option[CardDrag]   = None
+    var dragStack: Option[StackDrag] = None
+    var looseSeq                     = 0 // supplies fresh ids for stacks split off the board
 
     lazy val board: HtmlElement = div(
       cls := "board",
@@ -34,21 +40,22 @@ object GameView:
       children <-- state.signal.map(_.stacks).distinct.map(_.map(stackView)),
     )
 
-    // A card dropped on empty board space splits into a new stack; a dragged
-    // stack handle repositions its stack. Drops onto a stack are handled there.
+    // Where the pointer sits on the board right now, in board pixels.
+    def boardPoint(clientX: Double, clientY: Double): Position =
+      val rect = board.ref.getBoundingClientRect()
+      Position((clientX - rect.left).toInt, (clientY - rect.top).toInt)
+
+    // A card dropped on empty board space splits into a new stack at the point
+    // under the cursor. Drops onto a stack are handled by the stack itself.
     def onBoardDrop(e: dom.DragEvent): Unit =
       e.preventDefault()
-      val rect = board.ref.getBoundingClientRect()
-      val x    = (e.clientX - rect.left).toInt
-      val y    = (e.clientY - rect.top).toInt
-      drag.foreach:
-        case Drag.OfStack(id, offX, offY) =>
-          state.update(s => Engine.moveStack(s, id, Position(clamp(x - offX), clamp(y - offY))).getOrElse(s))
-        case Drag.OfCard(id, offX, offY) =>
-          looseSeq += 1
-          val newId = StackId(s"loose#$looseSeq")
-          state.update(s => Engine.extractCard(s, id, newId, Position(clamp(x - offX), clamp(y - offY))).getOrElse(s))
-      drag = None
+      val p = boardPoint(e.clientX, e.clientY)
+      dragCard.foreach: c =>
+        looseSeq += 1
+        val newId = StackId(s"loose#$looseSeq")
+        val to    = Position(clamp(p.x - c.offX), clamp(p.y - c.offY))
+        state.update(s => Engine.extractCard(s, c.id, newId, to).getOrElse(s))
+      dragCard = None
 
     def stackView(stack: Stack): Element =
       div(
@@ -85,37 +92,46 @@ object GameView:
         moveHandle(stack),
       )
 
-    // Dropping a card onto a stack merges it on top. Stack drags fall through to
-    // the board (no stopPropagation) so the board can reposition them.
+    // Dropping a card onto a stack merges it on top.
     def onStackDrop(e: dom.DragEvent, stack: Stack): Unit =
-      drag match
-        case Some(Drag.OfCard(cardId, _, _)) =>
-          e.preventDefault()
-          e.stopPropagation()
-          state.update(s => Engine.move(s, cardId, stack.id).getOrElse(s))
-          drag = None
-        case _ => ()
+      dragCard.foreach: c =>
+        e.preventDefault()
+        e.stopPropagation()
+        state.update(s => Engine.move(s, c.id, stack.id).getOrElse(s))
+        dragCard = None
 
+    // Pointer-driven, so movement is pixel-exact and starts immediately. We move
+    // the live element directly during the drag (no re-render churn that would
+    // drop the pointer capture) and commit the final position on release.
     def moveHandle(stack: Stack): Element =
       div(
-        cls       := "stack-handle",
-        draggable := true,
-        title     := "Drag to move this stack",
+        cls   := "stack-handle",
+        title := "Drag to move this stack",
         "⠿",
-        onDragStart --> { e =>
-          // Offset of the pointer within the stack, derived from the board rect
-          // and the stack's known position (no DOM traversal needed).
-          val b    = board.ref.getBoundingClientRect()
-          val offX = (e.clientX - b.left - stack.position.x).toInt
-          val offY = (e.clientY - b.top - stack.position.y).toInt
-          drag = Some(Drag.OfStack(stack.id, offX, offY))
-          // Drag the ghost of the whole stack, not just the handle. The handle
-          // is nested handle → .stack-side → .stack.
-          val stackEl = e.currentTarget.asInstanceOf[dom.Node].parentNode.parentNode.asInstanceOf[dom.Element]
-          e.dataTransfer.setDragImage(stackEl, offX, offY)
-          e.dataTransfer.setData("text/plain", stack.id.value)
+        onPointerDown --> { e =>
+          e.preventDefault()
+          val handle  = e.currentTarget.asInstanceOf[dom.Element]
+          val stackEl = handle.parentNode.parentNode.asInstanceOf[dom.html.Element]
+          val grab    = boardPoint(e.clientX, e.clientY)
+          // setPointerCapture keeps move/up events on the handle once the cursor
+          // leaves it; it's missing from this scala-js-dom facade, so call it raw.
+          handle.asInstanceOf[js.Dynamic].setPointerCapture(e.pointerId)
+          dragStack = Some(StackDrag(stackEl, grab.x - stack.position.x, grab.y - stack.position.y))
         },
-        onDragEnd --> (_ => drag = None),
+        onPointerMove --> { e =>
+          dragStack.foreach: d =>
+            val p = boardPoint(e.clientX, e.clientY)
+            d.el.style.left = s"${clamp(p.x - d.grabX)}px"
+            d.el.style.top = s"${clamp(p.y - d.grabY)}px"
+        },
+        onPointerUp --> { e =>
+          dragStack.foreach: d =>
+            val p = boardPoint(e.clientX, e.clientY)
+            e.currentTarget.asInstanceOf[js.Dynamic].releasePointerCapture(e.pointerId)
+            dragStack = None
+            state.update(s => Engine.moveStack(s, stack.id, Position(clamp(p.x - d.grabX), clamp(p.y - d.grabY))).getOrElse(s))
+        },
+        onPointerCancel --> (_ => dragStack = None),
       )
 
     def topView(stack: Stack): Element =
@@ -124,10 +140,10 @@ object GameView:
         case Some(card) =>
           val startDrag = onDragStart --> { e =>
             val r = e.currentTarget.asInstanceOf[dom.Element].getBoundingClientRect()
-            drag = Some(Drag.OfCard(card.id, (e.clientX - r.left).toInt, (e.clientY - r.top).toInt))
+            dragCard = Some(CardDrag(card.id, (e.clientX - r.left).toInt, (e.clientY - r.top).toInt))
             e.dataTransfer.setData("text/plain", card.id.value)
           }
-          val endDrag = onDragEnd --> (_ => drag = None)
+          val endDrag = onDragEnd --> (_ => dragCard = None)
           val flip    = onClick --> (_ => state.update(s => Engine.flip(s, card.id).getOrElse(s)))
           // 2+ cards get a layered "deck" look (see .card-stacked).
           val depth = if stack.cards.size > 1 then Seq("card-stacked") else Nil
