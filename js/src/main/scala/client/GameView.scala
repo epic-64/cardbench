@@ -156,11 +156,19 @@ object GameView:
         case None => div(cls := "card card-empty", "—")
         case Some(card) =>
           val startDrag = onDragStart --> { e =>
-            val r = e.currentTarget.asInstanceOf[dom.Element].getBoundingClientRect()
+            val el = e.currentTarget.asInstanceOf[dom.html.Element]
+            val r  = el.getBoundingClientRect()
             dragCard = Some(CardDrag(card.id, (e.clientX - r.left).toInt, (e.clientY - r.top).toInt))
             e.dataTransfer.setData("text/plain", card.id.value)
+            // Hide the source after the browser has captured the drag ghost (it
+            // grabs the image synchronously at dragstart), so a lone card shows
+            // only the ghost and doesn't appear to split in two.
+            dom.window.setTimeout(() => el.classList.add("card-dragging"), 0)
           }
-          val endDrag = onDragEnd --> (_ => dragCard = None)
+          val endDrag = onDragEnd --> { e =>
+            e.currentTarget.asInstanceOf[dom.html.Element].classList.remove("card-dragging")
+            dragCard = None
+          }
           val flip    = onClick --> (_ => state.update(s => Engine.flip(s, card.id).getOrElse(s)))
           // 2+ cards get a layered "deck" look (see .card-stacked).
           val depth = if stack.cards.size > 1 then Seq("card-stacked") else Nil

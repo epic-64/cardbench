@@ -74,6 +74,12 @@
   cursor: grabbing;
 }
 
+/* The source card is hidden while its drag ghost follows the cursor, so a
+   single-card stack doesn't look like it split into two. */
+.card-dragging {
+  opacity: 0;
+}
+
 /* 2+ cards: offset silhouettes behind the top card fake a layered deck. */
 .card-stacked {
   box-shadow:
