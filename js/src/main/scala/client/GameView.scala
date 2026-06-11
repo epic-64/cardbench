@@ -172,12 +172,6 @@ object GameView:
 
     div(
       cls := "game",
-      h1("Card Engine — Playtest Table"),
-      p(
-        cls := "game-hint",
-        "Drag a card onto empty space to split it off, or onto another stack to combine. " +
-          "Drag the ⠿ handle to move a whole stack. Click a card to flip it.",
-      ),
       board,
     )
 
