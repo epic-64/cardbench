@@ -44,8 +44,23 @@ object Facing:
     },
   )
 
-/** Authored content — the "front" of a card. */
-case class CardDef(id: CardDefId, color: String, title: String, description: String) derives ReadWriter
+/** A consequence of playing a card. The vocabulary is deliberately tiny: the
+  * single primitive `Deal` moves `count` cards from the top of one stack onto
+  * the top of another. Anything richer is composed from more of these.
+  */
+enum Effect derives ReadWriter:
+  case Deal(from: StackId, to: StackId, count: Int)
+
+/** Authored content — the "front" of a card. `effects` are resolved, in order,
+  * when the card is played (see `Engine.play`); a card with none is inert.
+  */
+case class CardDef(
+  id: CardDefId,
+  color: String,
+  title: String,
+  description: String,
+  effects: List[Effect] = Nil,
+) derives ReadWriter
 
 /** A physical card on the table: one instance of a definition. */
 case class CardInstance(id: CardId, defId: CardDefId, facing: Facing)
@@ -56,6 +71,10 @@ case class Position(x: Int, y: Int) derives ReadWriter
 /** An ordered pile. `cards.head` = top of the stack. `shuffled` is true while the
   * pile sits in a freshly shuffled order with nothing drawn, added, or flipped
   * since — a hint for the UI, cleared by any verb that touches the cards.
+  *
+  * `persistent` marks an essential pile — a player's deck or discard — that
+  * stays on the table even at zero cards, so effects can keep targeting it. A
+  * non-persistent stack ceases to exist once its last card leaves.
   */
 case class Stack(
   id: StackId,
@@ -63,6 +82,7 @@ case class Stack(
   position: Position,
   cards: List[CardInstance],
   shuffled: Boolean = false,
+  persistent: Boolean = false,
 )
 
 /** The whole table: the single source of truth. */
@@ -72,4 +92,5 @@ case class GameState(catalog: Map[CardDefId, CardDef], stacks: List[Stack])
 enum EngineError:
   case UnknownStack(id: StackId)
   case UnknownCard(id: CardId)
+  case UnknownCardDef(id: CardDefId)
   case EmptyStack(id: StackId)

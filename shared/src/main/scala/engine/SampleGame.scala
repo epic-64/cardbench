@@ -8,7 +8,18 @@ object SampleGame:
   val catalog: CardCatalog = CardCatalog(
     List(
       // HAND CARDS
-      CardDef(CardDefId("build"), "#3b82f6", "Build", "Ship a feature to fulfil a Request."),
+      CardDef(
+        CardDefId("build"),
+        "#3b82f6",
+        "Build",
+        "Ship a feature to fulfil a Request.",
+        effects = List(
+          // Shipping accrues debt: two Tech Debt cards land in your discard pile…
+          Effect.Deal(StackId("debt"), StackId("discard"), 2),
+          // …and you draw a feature into your building zone.
+          Effect.Deal(StackId("features"), StackId("build-zone"), 1),
+        ),
+      ),
       CardDef(CardDefId("refactor"), "#22c55e", "Refactor", "Remove 2 debt cards from your hand or deck."),
       CardDef(CardDefId("test"), "#eab308", "Test", "Prevent the next Bug event."),
       CardDef(CardDefId("backup"), "#a855f7", "Backup", "Prevent the next data-loss disaster."),
@@ -30,8 +41,10 @@ object SampleGame:
     ),
   )
 
-  // No empty stacks: a stack exists only while it holds cards. You make new
-  // piles mid-game by dragging a card onto empty board space.
+  // Most stacks exist only while they hold cards; you make new piles mid-game by
+  // dragging a card onto empty board space. The player's essential piles — deck,
+  // discard, and feature-building zone — are `persistent`, so they stay on the
+  // table even at zero cards and can always be targeted by a card's effects.
   val setup: GameSetup = GameSetup(
     List(
       StackSpec(
@@ -48,6 +61,7 @@ object SampleGame:
           SpawnSpec(CardDefId("backup"), 2),
         ),
         arrangement = Arrangement.Shuffled,
+        persistent = true,
       ),
       StackSpec(
         StackId("debt"),
@@ -83,6 +97,24 @@ object SampleGame:
           SpawnSpec(CardDefId("ci-cd"), 2),
         ),
         arrangement = Arrangement.Shuffled,
+      ),
+      // Essential player piles: empty at the start, kept alive by `persistent`
+      // so effects (e.g. Build's) always have somewhere to deal into.
+      StackSpec(
+        StackId("discard"),
+        "Discard",
+        Position(40, 260),
+        Facing.Up,
+        Nil,
+        persistent = true,
+      ),
+      StackSpec(
+        StackId("build-zone"),
+        "Building",
+        Position(260, 260),
+        Facing.Up,
+        Nil,
+        persistent = true,
       ),
     ),
   )
