@@ -78,6 +78,10 @@ class EngineSpec extends AnyWordSpec with Matchers:
       val unshuffled = stackOf(Engine.setup(catalog, setup, 7L), deck)
       shuffled.cards.toSet shouldBe unshuffled.cards.toSet
 
+    "flag a shuffled stack and leave an ordered one unflagged" in:
+      stackOf(Engine.setup(catalog, shuffledSetup, 1L), deck).shuffled shouldBe true
+      stackOf(Engine.setup(catalog, setup), deck).shuffled shouldBe false
+
   "Engine.shuffle" should:
 
     "reproduce the same order for the same seed" in:
@@ -88,6 +92,10 @@ class EngineSpec extends AnyWordSpec with Matchers:
       val state    = Engine.setup(catalog, setup)
       val shuffled = Engine.shuffle(state, deck, 7L).toOption.get
       stackOf(shuffled, deck).cards.map(_.id.value).sorted shouldBe stackOf(state, deck).cards.map(_.id.value).sorted
+
+    "flag the reordered stack as shuffled" in:
+      val shuffled = Engine.shuffle(Engine.setup(catalog, setup), deck, 7L).toOption.get
+      stackOf(shuffled, deck).shuffled shouldBe true
 
     "reject an unknown stack" in:
       Engine.shuffle(Engine.setup(catalog, setup), StackId("nope"), 1L) shouldBe Left(
@@ -104,6 +112,10 @@ class EngineSpec extends AnyWordSpec with Matchers:
 
     "reject dealing from an empty stack" in:
       Engine.deal(Engine.setup(catalog, setup), discard, deck) shouldBe Left(EngineError.EmptyStack(discard))
+
+    "clear the shuffled flag on a stack it draws from" in:
+      val shuffled = Engine.shuffle(Engine.setup(catalog, setup), deck, 7L).toOption.get
+      stackOf(Engine.deal(shuffled, deck, discard).toOption.get, deck).shuffled shouldBe false
 
   "Engine.move" should:
 
@@ -138,6 +150,10 @@ class EngineSpec extends AnyWordSpec with Matchers:
       val moved = Engine.moveStack(state, deck, Position(200, 80)).toOption.get
       stackOf(moved, deck).position shouldBe Position(200, 80)
       stackOf(moved, deck).cards.size shouldBe 12
+
+    "keep the shuffled flag when only repositioning" in:
+      val shuffled = Engine.shuffle(Engine.setup(catalog, setup), deck, 7L).toOption.get
+      stackOf(Engine.moveStack(shuffled, deck, Position(9, 9)).toOption.get, deck).shuffled shouldBe true
 
     "reject an unknown stack" in:
       Engine.moveStack(Engine.setup(catalog, setup), StackId("nope"), Position(0, 0)) shouldBe Left(
