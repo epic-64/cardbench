@@ -47,7 +47,7 @@ object SampleGame:
           SpawnSpec(CardDefId("test"), 2),
           SpawnSpec(CardDefId("backup"), 2),
         ),
-        shuffled = true,
+        arrangement = Arrangement.Shuffled,
       ),
       StackSpec(
         StackId("debt"),
@@ -68,7 +68,7 @@ object SampleGame:
           SpawnSpec(CardDefId("feature-blue"), 4),
           SpawnSpec(CardDefId("feature-red"), 4),
         ),
-        shuffled = true,
+        arrangement = Arrangement.Shuffled,
       ),
       StackSpec(
         StackId("events"),
@@ -82,7 +82,7 @@ object SampleGame:
           SpawnSpec(CardDefId("burnout"), 2),
           SpawnSpec(CardDefId("ci-cd"), 2),
         ),
-        shuffled = true,
+        arrangement = Arrangement.Shuffled,
       ),
     ),
   )

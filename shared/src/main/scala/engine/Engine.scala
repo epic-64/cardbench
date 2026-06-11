@@ -20,9 +20,9 @@ object Engine:
         .map((defId, i) => CardInstance(CardId(s"${spec.id.value}#$i"), defId, spec.facing))
       // Card ids are assigned before any shuffle, so they stay stable; only the
       // pile order changes. A per-stack seed keeps each shuffled stack independent.
-      val ordered =
-        if spec.shuffled then scala.util.Random(seed ^ spec.id.value.hashCode.toLong).shuffle(instances)
-        else instances
+      val ordered = spec.arrangement match
+        case Arrangement.Shuffled => scala.util.Random(seed ^ spec.id.value.hashCode.toLong).shuffle(instances)
+        case Arrangement.Ordered  => instances
       Stack(spec.id, spec.label, spec.position, ordered)
     GameState(defs, stacks)
 
