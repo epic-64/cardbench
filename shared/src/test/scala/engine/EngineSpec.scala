@@ -66,6 +66,7 @@ class EngineSpec extends AnyWordSpec with Matchers:
           Effect.Deal(StackId("debt"), StackId("discard"), 2),
           Effect.Deal(StackId("features"), StackId("build-zone"), 1),
         ),
+        playsTo = Some(StackId("discard")),
       ),
       CardDef(CardDefId("debt"), "#6b7280", "Tech Debt", "Dead weight."),
       CardDef(CardDefId("feature"), "#16a34a", "Feature", "A shipped feature."),

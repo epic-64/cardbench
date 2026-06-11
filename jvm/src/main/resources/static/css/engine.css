@@ -97,6 +97,16 @@
   cursor: default;
 }
 
+/* The play zone: drop a card here to play it. Accented so it reads as a target. */
+.stack-play .card-empty {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.stack-play .stack-label {
+  color: var(--accent);
+}
+
 .card-back {
   background-color: #1f1f2e;
   background-image: repeating-linear-gradient(

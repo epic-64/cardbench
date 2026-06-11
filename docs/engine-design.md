@@ -270,10 +270,17 @@ A small, opt-in step beyond the bare table, still game-agnostic: cards can carry
 - **Persistent stacks.** A `Stack`/`StackSpec` flagged `persistent` stays on the
   table even at zero cards, so a player's deck, discard, or building zone can
   always be targeted by an effect. Ordinary stacks still vanish when emptied.
+- **Authored destination.** `CardDef.playsTo` is the pile a card lands in once
+  played. The engine verb stays generic — `play` takes the `to` explicitly — and
+  the shell reads `playsTo` to supply it. `None` means the card stays put.
+- **Play zone (shell).** `SampleGame.playZone` is a persistent stack you drag a
+  card onto to play it: the drop calls `Engine.play(card, playsTo)`, the effects
+  resolve, and the card moves on to its destination (so the zone clears again
+  unless the card has no `playsTo`).
 
 Example (the `build` card in `SampleGame`): playing it deals two Tech Debt into
-the player's discard and draws one feature into the building zone, then the build
-card itself lands wherever `play` is told to put it.
+the player's discard and draws one feature into the building zone, then — via its
+`playsTo` — the spent build card goes to the discard.
 
 | #  | Goal                                  | Entry point         | Done when                                                                                              |
 |----|---------------------------------------|---------------------|-------------------------------------------------------------------------------------------------------|
