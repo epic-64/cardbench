@@ -58,12 +58,19 @@ object GameView:
         onDrop --> (e => onStackDrop(e, stack)),
         div(cls := "stack-label", s"${stack.label} (${stack.cards.size})".trim),
         topView(stack),
-        div(
-          cls := "stack-controls",
-          button(
-            "Shuffle",
-            onClick --> (_ => state.update(s => Engine.shuffle(s, stack.id, System.currentTimeMillis()).getOrElse(s))),
-          ),
+        sideControls(stack),
+      )
+
+    // A vertical control column hugging the stack's bottom-right: a small
+    // shuffle button above the drag-to-move handle.
+    def sideControls(stack: Stack): Element =
+      div(
+        cls := "stack-side",
+        button(
+          cls   := "stack-shuffle",
+          title := "Shuffle this stack",
+          "⇄",
+          onClick --> (_ => state.update(s => Engine.shuffle(s, stack.id, System.currentTimeMillis()).getOrElse(s))),
         ),
         moveHandle(stack),
       )
@@ -86,8 +93,12 @@ object GameView:
         title     := "Drag to move this stack",
         "⠿",
         onDragStart --> { e =>
-          val r = e.currentTarget.asInstanceOf[dom.Element].parentNode.asInstanceOf[dom.Element].getBoundingClientRect()
-          drag = Some(Drag.OfStack(stack.id, (e.clientX - r.left).toInt, (e.clientY - r.top).toInt))
+          // Offset of the pointer within the stack, derived from the board rect
+          // and the stack's known position (no DOM traversal needed).
+          val b    = board.ref.getBoundingClientRect()
+          val offX = (e.clientX - b.left - stack.position.x).toInt
+          val offY = (e.clientY - b.top - stack.position.y).toInt
+          drag = Some(Drag.OfStack(stack.id, offX, offY))
           e.dataTransfer.setData("text/plain", stack.id.value)
         },
         onDragEnd --> (_ => drag = None),
