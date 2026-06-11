@@ -1,0 +1,146 @@
+/* ── Card engine playtest table ────────────────────────────────────────────── */
+
+:root {
+  --card-w: 130px;
+  --card-h: 180px;
+  --card-radius: 8px;
+}
+
+.game {
+  width: 100%;
+  padding: var(--gap);
+}
+
+.game h1 {
+  margin: 0 0 0.25rem;
+  color: var(--accent);
+  font-size: 1.5rem;
+}
+
+.game-hint {
+  margin: 0 0 var(--gap);
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+/* Free-form board: stacks are absolutely positioned by their pixel Position. */
+.board {
+  position: relative;
+  width: 100%;
+  min-height: 70vh;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.015);
+  overflow: hidden;
+}
+
+.stack {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding-bottom: 1rem; /* room for the move handle */
+}
+
+.stack-label {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.card {
+  width: var(--card-w);
+  height: var(--card-h);
+  border: var(--border);
+  border-radius: var(--card-radius);
+  background: var(--surface);
+  padding: 0.6rem;
+  display: flex;
+  flex-direction: column;
+  cursor: grab;
+  user-select: none;
+}
+
+.card:active {
+  cursor: grabbing;
+}
+
+.card-empty {
+  border-style: dashed;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  cursor: default;
+}
+
+.card-back {
+  background-color: #1f1f2e;
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(184, 132, 255, 0.18),
+    rgba(184, 132, 255, 0.18) 8px,
+    transparent 8px,
+    transparent 16px
+  );
+}
+
+.card-title {
+  font-weight: 600;
+}
+
+.card-desc {
+  margin-top: 0.4rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.3;
+}
+
+.stack-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  width: var(--card-w);
+}
+
+.stack-controls button {
+  font: inherit;
+  font-size: 0.8rem;
+  padding: 0.35rem 0.5rem;
+  color: var(--text);
+  background: var(--surface);
+  border: var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.stack-controls button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Drag the handle (bottom-right) to move the whole stack. */
+.stack-handle {
+  position: absolute;
+  right: -0.4rem;
+  bottom: -0.4rem;
+  width: 1.5rem;
+  height: 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  background: var(--surface);
+  border: var(--border);
+  border-radius: var(--card-radius);
+  cursor: grab;
+  user-select: none;
+}
+
+.stack-handle:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.stack-handle:active {
+  cursor: grabbing;
+}

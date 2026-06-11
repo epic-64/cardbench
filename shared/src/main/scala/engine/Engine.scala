@@ -49,6 +49,24 @@ object Engine:
         s.copy(cards = s.cards.map(c => if c.id == card then c.copy(facing = toggle(c.facing)) else c))
       state.copy(stacks = stacks)
 
+  /** Reposition a whole stack on the board; its cards are untouched. */
+  def moveStack(state: GameState, stack: StackId, to: Position): Either[EngineError, GameState] =
+    find(state, stack).map(s => replaceStack(state, s.copy(position = to)))
+
+  /** Pull one card out of its stack into a brand-new single-card stack at `to`.
+    * The caller supplies the fresh `newStack` id, keeping the verb deterministic.
+    */
+  def extractCard(
+    state: GameState,
+    card: CardId,
+    newStack: StackId,
+    to: Position,
+  ): Either[EngineError, GameState] =
+    findCard(state, card).toRight(UnknownCard(card)).map: instance =>
+      val without = state.stacks.map(s => s.copy(cards = s.cards.filterNot(_.id == card)))
+      val created = Stack(newStack, "", to, List(instance))
+      state.copy(stacks = without :+ created)
+
   // ── helpers ────────────────────────────────────────────────────────────────
 
   private def find(state: GameState, id: StackId): Either[EngineError, Stack] =

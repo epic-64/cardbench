@@ -20,7 +20,7 @@ object SampleGame:
       StackSpec(
         StackId("deck"),
         "Dev Deck",
-        Position(1, 1),
+        Position(40, 40),
         Facing.Down,
         List(
           SpawnSpec(CardDefId("build"), 8),
@@ -29,7 +29,7 @@ object SampleGame:
           SpawnSpec(CardDefId("backup"), 2),
         ),
       ),
-      StackSpec(StackId("discard"), "Discard", Position(2, 1), Facing.Up, Nil),
-      StackSpec(StackId("play"), "Play Area", Position(3, 1), Facing.Up, Nil),
+      StackSpec(StackId("discard"), "Discard", Position(260, 40), Facing.Up, Nil),
+      StackSpec(StackId("play"), "Play Area", Position(480, 40), Facing.Up, Nil),
     ),
   )

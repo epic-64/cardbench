@@ -93,6 +93,33 @@ class EngineSpec extends AnyWordSpec with Matchers:
       stackOf(flipped, deck).cards.head.facing shouldBe Facing.Up
       stackOf(flipped, deck).cards.tail.map(_.facing).distinct shouldBe List(Facing.Down)
 
+  "Engine.moveStack" should:
+
+    "reposition the stack while keeping its cards" in:
+      val state = Engine.setup(catalog, setup)
+      val moved = Engine.moveStack(state, deck, Position(200, 80)).toOption.get
+      stackOf(moved, deck).position shouldBe Position(200, 80)
+      stackOf(moved, deck).cards.size shouldBe 12
+
+    "reject an unknown stack" in:
+      Engine.moveStack(Engine.setup(catalog, setup), StackId("nope"), Position(0, 0)) shouldBe Left(
+        EngineError.UnknownStack(StackId("nope")),
+      )
+
+  "Engine.extractCard" should:
+
+    "pull the card into a new single-card stack at the given position" in:
+      val state = Engine.setup(catalog, setup)
+      val out   = Engine.extractCard(state, CardId("deck#3"), StackId("loose"), Position(50, 90)).toOption.get
+      stackOf(out, StackId("loose")).cards.map(_.id) shouldBe List(CardId("deck#3"))
+      stackOf(out, StackId("loose")).position shouldBe Position(50, 90)
+      stackOf(out, deck).cards.exists(_.id == CardId("deck#3")) shouldBe false
+
+    "reject an unknown card" in:
+      Engine.extractCard(Engine.setup(catalog, setup), CardId("ghost"), StackId("loose"), Position(0, 0)) shouldBe Left(
+        EngineError.UnknownCard(CardId("ghost")),
+      )
+
   "JSON codecs" should:
 
     "round-trip a catalog unchanged" in:
