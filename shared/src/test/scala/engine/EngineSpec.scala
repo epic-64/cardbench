@@ -27,6 +27,20 @@ class EngineSpec extends AnyWordSpec with Matchers:
     ),
   )
 
+  // The same deck, but flagged to shuffle at setup.
+  private val shuffledSetup = GameSetup(
+    List(
+      StackSpec(
+        StackId("deck"),
+        "Dev Deck",
+        Position(1, 1),
+        Facing.Down,
+        List(SpawnSpec(CardDefId("build"), 8), SpawnSpec(CardDefId("refactor"), 4)),
+        shuffled = true,
+      ),
+    ),
+  )
+
   private val deck    = StackId("deck")
   private val discard = StackId("discard")
 
@@ -52,6 +66,17 @@ class EngineSpec extends AnyWordSpec with Matchers:
       val state = Engine.setup(catalog, setup)
       stackOf(state, deck).cards.head shouldBe CardInstance(CardId("deck#0"), CardDefId("build"), Facing.Down)
       stackOf(state, deck).cards.last shouldBe CardInstance(CardId("deck#11"), CardDefId("refactor"), Facing.Down)
+
+    "leave an unshuffled stack in spawn order regardless of seed" in:
+      Engine.setup(catalog, setup, 99L) shouldBe Engine.setup(catalog, setup, 1L)
+
+    "order a shuffled stack deterministically for a given seed" in:
+      Engine.setup(catalog, shuffledSetup, 42L) shouldBe Engine.setup(catalog, shuffledSetup, 42L)
+
+    "keep a shuffled stack's cards unchanged, only reordering them" in:
+      val shuffled   = stackOf(Engine.setup(catalog, shuffledSetup, 7L), deck)
+      val unshuffled = stackOf(Engine.setup(catalog, setup, 7L), deck)
+      shuffled.cards.toSet shouldBe unshuffled.cards.toSet
 
   "Engine.shuffle" should:
 

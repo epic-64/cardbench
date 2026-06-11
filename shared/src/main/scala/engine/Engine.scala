@@ -7,15 +7,23 @@ import engine.EngineError.*
   */
 object Engine:
 
-  /** Build the starting table from authored data. Deterministic — no shuffle. */
-  def setup(catalog: CardCatalog, gameSetup: GameSetup): GameState =
+  /** Build the starting table from authored data. Deterministic: a stack flagged
+    * `shuffled` is ordered by a per-stack seeded RNG, so the same `seed`
+    * reproduces the same table. Unflagged stacks keep their authored order.
+    */
+  def setup(catalog: CardCatalog, gameSetup: GameSetup, seed: Long = 0L): GameState =
     val defs = catalog.cards.map(c => c.id -> c).toMap
     val stacks = gameSetup.stacks.map: spec =>
       val instances = spec.contents
         .flatMap(spawn => List.fill(spawn.count)(spawn.card))
         .zipWithIndex
         .map((defId, i) => CardInstance(CardId(s"${spec.id.value}#$i"), defId, spec.facing))
-      Stack(spec.id, spec.label, spec.position, instances)
+      // Card ids are assigned before any shuffle, so they stay stable; only the
+      // pile order changes. A per-stack seed keeps each shuffled stack independent.
+      val ordered =
+        if spec.shuffled then scala.util.Random(seed ^ spec.id.value.hashCode.toLong).shuffle(instances)
+        else instances
+      Stack(spec.id, spec.label, spec.position, ordered)
     GameState(defs, stacks)
 
   /** Reorder one stack using a seeded RNG. Same seed ⇒ same order. */
