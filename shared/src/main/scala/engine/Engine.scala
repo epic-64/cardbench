@@ -30,6 +30,7 @@ object Engine:
         ordered,
         shuffled = spec.arrangement == Arrangement.Shuffled,
         persistent = spec.persistent,
+        layout = spec.layout,
       )
     GameState(defs, stacks)
 

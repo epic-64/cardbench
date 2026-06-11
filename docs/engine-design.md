@@ -275,6 +275,10 @@ A small, opt-in step beyond the bare table, still game-agnostic: cards can carry
 - **Persistent stacks.** A `Stack`/`StackSpec` flagged `persistent` stays on the
   table even at zero cards, so a player's deck, discard, or building zone can
   always be targeted by an effect. Ordinary stacks still vanish when emptied.
+- **Stack layout.** `Stack.layout` is a display hint: `Pile` heaps cards at one
+  spot (only the top shows), `Row` spreads them side by side so each is
+  individually visible — for tableau zones like the player's built features. It's
+  authored data; the engine ignores it, the shell renders accordingly.
 - **Authored destination.** `CardDef.playsTo` is the pile a card lands in once
   played. The engine verb stays generic — `play` takes the `to` explicitly — and
   the shell reads `playsTo` to supply it. `None` means the card stays put.
