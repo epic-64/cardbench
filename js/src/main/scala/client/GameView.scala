@@ -25,7 +25,7 @@ object GameView:
   private final case class StackDrag(el: dom.html.Element, grabX: Int, grabY: Int)
 
   def view(): Element =
-    val initial = Engine.setup(SampleGame.catalog, SampleGame.setup)
+    val initial = Engine.setup(SampleGame.catalog, SampleGame.setup, System.currentTimeMillis())
     val state   = Var(initial)
     val catalog = initial.catalog
 

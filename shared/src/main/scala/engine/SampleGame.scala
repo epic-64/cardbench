@@ -47,6 +47,7 @@ object SampleGame:
           SpawnSpec(CardDefId("test"), 2),
           SpawnSpec(CardDefId("backup"), 2),
         ),
+        shuffled = true,
       ),
       StackSpec(
         StackId("debt"),
@@ -54,7 +55,7 @@ object SampleGame:
         Position(260, 40),
         Facing.Down,
         List(
-          SpawnSpec(CardDefId("debt"), 8),
+          SpawnSpec(CardDefId("debt"), 30),
         ),
       ),
       StackSpec(
@@ -67,6 +68,7 @@ object SampleGame:
           SpawnSpec(CardDefId("feature-blue"), 4),
           SpawnSpec(CardDefId("feature-red"), 4),
         ),
+        shuffled = true,
       ),
       StackSpec(
         StackId("events"),
@@ -80,6 +82,7 @@ object SampleGame:
           SpawnSpec(CardDefId("burnout"), 2),
           SpawnSpec(CardDefId("ci-cd"), 2),
         ),
+        shuffled = true,
       ),
     ),
   )

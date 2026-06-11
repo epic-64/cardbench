@@ -13,8 +13,9 @@ case class StackSpec(
   id: StackId,
   label: String,
   position: Position,
-  facing: Facing,            // applied to every card spawned here
-  contents: List[SpawnSpec], // expanded into instances, in order
+  facing: Facing,             // applied to every card spawned here
+  contents: List[SpawnSpec],  // expanded into instances, in order
+  shuffled: Boolean = false,  // when true, the spawned cards are shuffled at setup (seeded)
 ) derives ReadWriter
 
 /** The starting table. */
