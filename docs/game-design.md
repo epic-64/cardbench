@@ -206,15 +206,20 @@ The **Event Deck** is the world acting on you. The design rule for events
 mirrors the whole game: **every event must be answerable by a tool the player
 already has.** If an event has no lever, it's just unfair RNG — cut it.
 
-### How events arrive: the Incoming slot
+### How events arrive: immediate and unforgiving
 
-Disasters and pivots are **telegraphed**, not instant. When drawn they go
-face-up into an **Incoming** slot and resolve at the **end of next sprint**.
-This gives you exactly one sprint to respond — or to decide the hit is small
-enough to eat. Defenses become decisions under information, not blind insurance.
+There is no warning. Every event resolves the **moment it's drawn** — disasters
+included. You cannot react to a disaster on the turn it hits; your only defense
+is one you **armed in an earlier sprint**, already waiting in the Play area.
 
-Requests and immediate events resolve the sprint they appear (requests then
-linger until fulfilled or they expire).
+That's the risk at the heart of the game: insurance costs an action and a play
+slot *now*, against a threat that might never come. Arm a Backup every sprint and
+you bleed the capacity you needed to score; arm nothing and the disaster that
+does arrive lands at full force. There's no information to wait for — only the
+bet.
+
+Requests are the exception: they linger in Active Requests until you fulfil them
+or they expire. Everything else resolves on reveal.
 
 ### The six families
 
@@ -222,14 +227,16 @@ linger until fulfilled or they expire).
   Reputation hit if ignored. *Lever:* **Build** (+ Agile Maneuver to flex shape).
 - **Stakeholder Request** — bigger shape, internal priority; pays Money, harsher
   Money penalty if ignored. *Lever:* **Build** / prioritizing it.
-- **Disaster** (data-loss) — lose Reputation equal to the Debt cards in your
-  discard. *Lever:* **Backup** cancels it; low Debt shrinks it.
+- **Disaster** (data-loss) — fires on reveal: lose Reputation equal to the Debt
+  cards in your discard. *Lever:* a **pre-armed Backup** cancels it; low Debt
+  shrinks it. You must have armed it in an earlier sprint.
 - **Quality check** (Bug / Audit) — penalises you for shipping without QA.
-  *Lever:* an armed **Test** cancels it (symmetric to Backup vs. Disaster).
-- **Morale / DX** (Burnout) — 3+ Debt cards in hand costs you an action next
+  *Lever:* a **pre-armed Test** cancels it (symmetric to Backup vs. Disaster).
+- **Morale / DX** (Burnout) — 3+ Debt cards in hand costs you an action this
   sprint. *Lever:* **Refactor** to keep Debt low. No card cancels it.
-- **Pivot** (Scope change) — an Incoming request's shape changes. *Lever:*
-  **Agile Maneuver**.
+- **Pivot** (Scope change) — an **active request's** shape changes on reveal.
+  *Lever:* **Agile Maneuver** (the request lingers, so you adapt it next Action
+  phase).
 
 ### Boons — the relief valve (not everything is punishment)
 
