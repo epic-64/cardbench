@@ -23,13 +23,15 @@ object Engine:
       val ordered = spec.arrangement match
         case Arrangement.Shuffled => scala.util.Random(seed ^ spec.id.value.hashCode.toLong).shuffle(instances)
         case Arrangement.Ordered  => instances
-      Stack(spec.id, spec.label, spec.position, ordered)
+      Stack(spec.id, spec.label, spec.position, ordered, shuffled = spec.arrangement == Arrangement.Shuffled)
     GameState(defs, stacks)
 
-  /** Reorder one stack using a seeded RNG. Same seed ⇒ same order. */
+  /** Reorder one stack using a seeded RNG. Same seed ⇒ same order. Marks the
+    * stack `shuffled` until something touches its cards again.
+    */
   def shuffle(state: GameState, stack: StackId, seed: Long): Either[EngineError, GameState] =
     find(state, stack).map: s =>
-      replaceStack(state, s.copy(cards = scala.util.Random(seed).shuffle(s.cards)))
+      replaceStack(state, s.copy(cards = scala.util.Random(seed).shuffle(s.cards), shuffled = true))
 
   /** Hand out one card: move the top of `from` onto the top of `to`. */
   def deal(state: GameState, from: StackId, to: StackId): Either[EngineError, GameState] =
@@ -48,15 +50,20 @@ object Engine:
       instance <- findCard(state, card).toRight(UnknownCard(card))
       _        <- find(state, to)
     yield
-      val without = state.stacks.map(s => s.copy(cards = s.cards.filterNot(_.id == card)))
-      val placed  = without.map(s => if s.id == to then s.copy(cards = instance :: s.cards) else s)
+      // Both ends are touched, so neither is "freshly shuffled" any more.
+      val without = state.stacks.map: s =>
+        if s.cards.exists(_.id == card) then s.copy(cards = s.cards.filterNot(_.id == card), shuffled = false)
+        else s
+      val placed = without.map(s => if s.id == to then s.copy(cards = instance :: s.cards, shuffled = false) else s)
       state.copy(stacks = dropEmpty(placed))
 
   /** Flip a single card between Up and Down; nothing else changes. */
   def flip(state: GameState, card: CardId): Either[EngineError, GameState] =
     findCard(state, card).toRight(UnknownCard(card)).map: _ =>
       val stacks = state.stacks.map: s =>
-        s.copy(cards = s.cards.map(c => if c.id == card then c.copy(facing = toggle(c.facing)) else c))
+        if s.cards.exists(_.id == card) then
+          s.copy(cards = s.cards.map(c => if c.id == card then c.copy(facing = toggle(c.facing)) else c), shuffled = false)
+        else s
       state.copy(stacks = stacks)
 
   /** Reposition a whole stack on the board; its cards are untouched. */
@@ -73,7 +80,9 @@ object Engine:
     to: Position,
   ): Either[EngineError, GameState] =
     findCard(state, card).toRight(UnknownCard(card)).map: instance =>
-      val without = state.stacks.map(s => s.copy(cards = s.cards.filterNot(_.id == card)))
+      val without = state.stacks.map: s =>
+        if s.cards.exists(_.id == card) then s.copy(cards = s.cards.filterNot(_.id == card), shuffled = false)
+        else s
       val created = Stack(newStack, "", to, List(instance))
       state.copy(stacks = dropEmpty(without :+ created))
 

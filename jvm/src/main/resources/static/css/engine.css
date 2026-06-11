@@ -38,6 +38,7 @@
 }
 
 .card {
+  position: relative;
   width: var(--card-w);
   height: var(--card-h);
   border: var(--border);
@@ -48,6 +49,25 @@
   flex-direction: column;
   cursor: grab;
   user-select: none;
+}
+
+/* Centered mark on a pile that's freshly shuffled and untouched since. */
+.shuffle-badge {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 2.2rem;
+  height: 2.2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  color: var(--accent);
+  background: rgba(10, 10, 15, 0.65);
+  border: 1px solid var(--accent);
+  border-radius: 50%;
+  pointer-events: none;
 }
 
 .card:active {
@@ -139,4 +159,17 @@
 .stack-handle:hover {
   color: var(--accent);
   border-color: var(--accent);
+}
+
+/* A quick riffle-shake when a stack is shuffled, so the action is visible.
+   Duration is mirrored by shuffleAnimMs in GameView.scala. */
+@keyframes shuffle-shake {
+  0%, 100% { transform: translateX(0) rotate(0deg); }
+  25%      { transform: translateX(-5px) rotate(-4deg); }
+  50%      { transform: translateX(5px) rotate(4deg); }
+  75%      { transform: translateX(-4px) rotate(3deg); }
+}
+
+.stack.shuffling {
+  animation: shuffle-shake 0.45s ease-in-out;
 }

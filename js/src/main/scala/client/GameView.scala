@@ -33,6 +33,9 @@ object GameView:
     var dragStack: Option[StackDrag] = None
     var looseSeq                     = 0 // supplies fresh ids for stacks split off the board
 
+    // Which stack is mid-shuffle: drives the shake animation, cleared on a timer.
+    val shuffling = Var(Option.empty[StackId])
+
     lazy val board: HtmlElement = div(
       cls := "board",
       onDragOver --> (e => e.preventDefault()),
@@ -60,6 +63,7 @@ object GameView:
     def stackView(stack: Stack): Element =
       div(
         cls       := "stack",
+        cls("shuffling") <-- shuffling.signal.map(_.contains(stack.id)).distinct,
         styleAttr := s"left:${stack.position.x}px;top:${stack.position.y}px",
         onDragOver --> (e => e.preventDefault()),
         onDrop --> (e => onStackDrop(e, stack)),
@@ -87,7 +91,13 @@ object GameView:
           cls   := "stack-shuffle",
           title := "Shuffle this stack",
           "⇄",
-          onClick --> (_ => state.update(s => Engine.shuffle(s, stack.id, System.currentTimeMillis()).getOrElse(s))),
+          onClick --> { _ =>
+            // Mark the stack first so the re-rendered element mounts with the
+            // animation class already on; a timer clears it once the shake ends.
+            shuffling.set(Some(stack.id))
+            dom.window.setTimeout(() => shuffling.set(None), shuffleAnimMs)
+            state.update(s => Engine.shuffle(s, stack.id, System.currentTimeMillis()).getOrElse(s))
+          },
         ),
         moveHandle(stack),
       )
@@ -154,9 +164,11 @@ object GameView:
           val flip    = onClick --> (_ => state.update(s => Engine.flip(s, card.id).getOrElse(s)))
           // 2+ cards get a layered "deck" look (see .card-stacked).
           val depth = if stack.cards.size > 1 then Seq("card-stacked") else Nil
+          // Marks a pile still sitting in its freshly shuffled order (see Stack.shuffled).
+          val badge = if stack.shuffled then div(cls := "shuffle-badge", "⇄") else emptyNode
           card.facing match
             case Facing.Down =>
-              div(cls := Seq("card", "card-back") ++ depth, draggable := true, startDrag, endDrag, flip)
+              div(cls := Seq("card", "card-back") ++ depth, draggable := true, startDrag, endDrag, flip, badge)
             case Facing.Up =>
               val d = catalog.get(card.defId)
               div(
@@ -168,6 +180,7 @@ object GameView:
                 startDrag,
                 endDrag,
                 flip,
+                badge,
               )
 
     div(
@@ -176,3 +189,6 @@ object GameView:
     )
 
   private def clamp(n: Int): Int = math.max(0, n)
+
+  // Kept in step with the .stack.shuffling animation duration in engine.css.
+  private val shuffleAnimMs = 450

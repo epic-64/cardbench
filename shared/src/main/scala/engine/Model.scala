@@ -53,8 +53,17 @@ case class CardInstance(id: CardId, defId: CardDefId, facing: Facing)
 /** A free-form table coordinate in board pixels. */
 case class Position(x: Int, y: Int) derives ReadWriter
 
-/** An ordered pile. `cards.head` = top of the stack. */
-case class Stack(id: StackId, label: String, position: Position, cards: List[CardInstance])
+/** An ordered pile. `cards.head` = top of the stack. `shuffled` is true while the
+  * pile sits in a freshly shuffled order with nothing drawn, added, or flipped
+  * since — a hint for the UI, cleared by any verb that touches the cards.
+  */
+case class Stack(
+  id: StackId,
+  label: String,
+  position: Position,
+  cards: List[CardInstance],
+  shuffled: Boolean = false,
+)
 
 /** The whole table: the single source of truth. */
 case class GameState(catalog: Map[CardDefId, CardDef], stacks: List[Stack])
