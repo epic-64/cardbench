@@ -65,19 +65,27 @@ object Engine:
       state.copy(stacks = dropEmpty(placed))
 
   /** Play a card: resolve its definition's effects in order, then move the
-    * played instance onto `to`. Effects are threaded through `Either`, so any
-    * failure (e.g. an effect dealing from an empty stack) aborts the whole play
-    * and leaves the original state untouched — playing a card is all-or-nothing.
+    * played instance onto `to`. Applies the whole script at once; see
+    * `playSteps` for the step-by-step form the animated shell uses.
     */
   def play(state: GameState, card: CardId, to: StackId): Either[EngineError, GameState] =
+    playSteps(state, card, to).map(applySteps(state, _))
+
+  /** The script a play would run: one ordered `Step` per atomic move or flip,
+    * ending with the played card moving onto `to`. The whole thing is threaded
+    * through `Either`, so any failure (e.g. an effect dealing from an empty
+    * stack) aborts before a single step is returned — playing is all-or-nothing.
+    */
+  def playSteps(state: GameState, card: CardId, to: StackId): Either[EngineError, List[Step]] =
     for
       instance <- findCard(state, card).toRight(UnknownCard(card))
       cardDef  <- state.catalog.get(instance.defId).toRight(UnknownCardDef(instance.defId))
       _        <- find(state, to)
-      resolved <- cardDef.effects.foldLeft[Either[EngineError, GameState]](Right(state)):
-                    (acc, effect) => acc.flatMap(s => applyEffect(s, effect))
-      result   <- move(resolved, card, to)
-    yield result
+      resolved <- cardDef.effects.foldLeft[Either[EngineError, (GameState, List[Step])]](Right((state, Nil))):
+                    (acc, effect) =>
+                      acc.flatMap:
+                        case (s, steps) => dealSteps(s, effect).map((s2, more) => (s2, steps ++ more))
+    yield resolved._2 :+ Step.Move(card, to)
 
   /** Flip a single card between Up and Down; nothing else changes. */
   def flip(state: GameState, card: CardId): Either[EngineError, GameState] =
@@ -110,14 +118,33 @@ object Engine:
 
   // ── helpers ────────────────────────────────────────────────────────────────
 
-  /** Resolve one effect against the table. `Deal` is just `count` repeated
-    * single deals, threaded through `Either` so an over-draw surfaces its error.
+  /** The steps one effect contributes, plus the state after running them (so the
+    * next effect sees updated stack tops). `Deal` is `count` single deals; each
+    * emits a `Move`, and a `Flip` too when `reveal` turns a face-down card up.
     */
-  private def applyEffect(state: GameState, effect: Effect): Either[EngineError, GameState] =
+  private def dealSteps(state: GameState, effect: Effect): Either[EngineError, (GameState, List[Step])] =
     effect match
-      case Effect.Deal(from, to, count) =>
-        List.fill(count)(()).foldLeft[Either[EngineError, GameState]](Right(state)):
-          (acc, _) => acc.flatMap(s => deal(s, from, to))
+      case Effect.Deal(from, to, count, reveal) =>
+        List.fill(count)(()).foldLeft[Either[EngineError, (GameState, List[Step])]](Right((state, Nil))):
+          (acc, _) =>
+            acc.flatMap:
+              case (s, steps) =>
+                for
+                  src   <- find(s, from)
+                  top   <- src.cards.headOption.toRight(EmptyStack(from))
+                  dealt <- deal(s, from, to)
+                yield
+                  val flips = if reveal && top.facing == Facing.Down then List(Step.Flip(top.id)) else Nil
+                  val next  = flips.foldLeft(dealt)((st, _) => flip(st, top.id).getOrElse(st))
+                  (next, steps ++ (Step.Move(top.id, to) :: flips))
+
+  /** Run a script straight through, ignoring per-step errors the script's own
+    * construction already ruled out. */
+  private def applySteps(state: GameState, steps: List[Step]): GameState =
+    steps.foldLeft(state): (s, step) =>
+      step match
+        case Step.Move(card, to) => move(s, card, to).getOrElse(s)
+        case Step.Flip(card)     => flip(s, card).getOrElse(s)
 
   private def find(state: GameState, id: StackId): Either[EngineError, Stack] =
     state.stacks.find(_.id == id).toRight(UnknownStack(id))

@@ -19,10 +19,10 @@ object SampleGame:
         "Build",
         "Ship a feature to fulfil a Request.",
         effects = List(
-          // Shipping accrues debt: two Tech Debt cards land in your discard pile…
-          Effect.Deal(StackId("debt"), StackId("discard"), 2),
-          // …and you draw a feature into your building zone.
-          Effect.Deal(StackId("features"), StackId("build-zone"), 1),
+          // First you draw a feature into your building zone, revealed…
+          Effect.Deal(StackId("features"), StackId("build-zone"), 1, reveal = true),
+          // …then shipping accrues debt: two Tech Debt cards turn up in your discard.
+          Effect.Deal(StackId("debt"), StackId("discard"), 2, reveal = true),
         ),
         playsTo = Some(StackId("discard")), // the spent Build card goes to discard
       ),

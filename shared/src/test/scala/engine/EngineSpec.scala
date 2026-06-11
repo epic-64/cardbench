@@ -63,8 +63,8 @@ class EngineSpec extends AnyWordSpec with Matchers:
         "Build",
         "Ship a feature.",
         effects = List(
-          Effect.Deal(StackId("debt"), StackId("discard"), 2),
-          Effect.Deal(StackId("features"), StackId("build-zone"), 1),
+          Effect.Deal(StackId("features"), StackId("build-zone"), 1, reveal = true),
+          Effect.Deal(StackId("debt"), StackId("discard"), 2, reveal = true),
         ),
         playsTo = Some(StackId("discard")),
       ),
@@ -262,6 +262,26 @@ class EngineSpec extends AnyWordSpec with Matchers:
     "leave the table untouched when an effect over-draws its source" in:
       val state = Engine.setup(playCatalog, drained)
       Engine.play(state, CardId("hand#0"), StackId("in-play")) shouldBe Left(EngineError.EmptyStack(StackId("debt")))
+
+    "turn the revealed cards face-up where they land" in:
+      val played = Engine.play(Engine.setup(playCatalog, playSetup), CardId("hand#0"), StackId("in-play")).toOption.get
+      stackOf(played, StackId("build-zone")).cards.head.facing shouldBe Facing.Up
+      stackOf(played, StackId("discard")).cards.map(_.facing).distinct shouldBe List(Facing.Up)
+
+  "Engine.playSteps" should:
+
+    "script each move and reveal in order, ending with the played card" in:
+      Engine.playSteps(Engine.setup(playCatalog, playSetup), CardId("hand#0"), StackId("in-play")) shouldBe Right(
+        List(
+          Step.Move(CardId("features#0"), StackId("build-zone")),
+          Step.Flip(CardId("features#0")),
+          Step.Move(CardId("debt#0"), StackId("discard")),
+          Step.Flip(CardId("debt#0")),
+          Step.Move(CardId("debt#1"), StackId("discard")),
+          Step.Flip(CardId("debt#1")),
+          Step.Move(CardId("hand#0"), StackId("in-play")),
+        ),
+      )
 
   "JSON codecs" should:
 

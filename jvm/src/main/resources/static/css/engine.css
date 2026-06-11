@@ -89,6 +89,18 @@
     6px 6px 0 1px var(--border-color);
 }
 
+/* A quick edge-on flip when a played card is revealed. Duration is mirrored by
+   flipAnimMs in GameView.scala. */
+@keyframes card-flip {
+  0%   { transform: scaleX(1); }
+  50%  { transform: scaleX(0.05); }
+  100% { transform: scaleX(1); }
+}
+
+.card-flipping {
+  animation: card-flip 0.32s ease-in-out;
+}
+
 .card-empty {
   border-style: dashed;
   align-items: center;
