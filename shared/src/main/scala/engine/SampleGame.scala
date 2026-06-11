@@ -121,6 +121,7 @@ object SampleGame:
         Facing.Up,
         Nil,
         persistent = true,
+        layout = Layout.Row, // built features sit side by side, not in a heap
       ),
       // Drop a card here to play it: its effects resolve and it moves on to its
       // post-play destination (see CardDef.playsTo).

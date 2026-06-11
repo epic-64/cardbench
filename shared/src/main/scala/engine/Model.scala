@@ -80,6 +80,27 @@ case class CardInstance(id: CardId, defId: CardDefId, facing: Facing)
 /** A free-form table coordinate in board pixels. */
 case class Position(x: Int, y: Int) derives ReadWriter
 
+/** How a stack is shown on the table. `Pile` heaps its cards at one spot so only
+  * the top is visible; `Row` spreads them side by side, each card individually
+  * visible — for tableau-style zones like a player's built features.
+  */
+enum Layout:
+  case Pile, Row
+
+object Layout:
+  // Lowercase on the wire, matching the authored setup JSON.
+  given ReadWriter[Layout] = readwriter[String].bimap(
+    {
+      case Layout.Pile => "pile"
+      case Layout.Row  => "row"
+    },
+    {
+      case "pile" => Layout.Pile
+      case "row"  => Layout.Row
+      case other  => sys.error(s"Unknown layout: $other")
+    },
+  )
+
 /** An ordered pile. `cards.head` = top of the stack. `shuffled` is true while the
   * pile sits in a freshly shuffled order with nothing drawn, added, or flipped
   * since — a hint for the UI, cleared by any verb that touches the cards.
@@ -95,6 +116,7 @@ case class Stack(
   cards: List[CardInstance],
   shuffled: Boolean = false,
   persistent: Boolean = false,
+  layout: Layout = Layout.Pile,
 )
 
 /** The whole table: the single source of truth. */

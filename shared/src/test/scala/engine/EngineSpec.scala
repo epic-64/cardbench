@@ -78,7 +78,7 @@ class EngineSpec extends AnyWordSpec with Matchers:
       StackSpec(StackId("debt"), "Debt", Position(0, 0), Facing.Down, List(SpawnSpec(CardDefId("debt"), 5))),
       StackSpec(StackId("features"), "Features", Position(0, 0), Facing.Down, List(SpawnSpec(CardDefId("feature"), 3))),
       StackSpec(StackId("discard"), "Discard", Position(0, 0), Facing.Up, Nil, persistent = true),
-      StackSpec(StackId("build-zone"), "Building", Position(0, 0), Facing.Up, Nil, persistent = true),
+      StackSpec(StackId("build-zone"), "Building", Position(0, 0), Facing.Up, Nil, persistent = true, layout = Layout.Row),
       StackSpec(StackId("in-play"), "In Play", Position(0, 0), Facing.Up, Nil, persistent = true),
     ),
   )
@@ -134,6 +134,9 @@ class EngineSpec extends AnyWordSpec with Matchers:
     "flag a shuffled stack and leave an ordered one unflagged" in:
       stackOf(Engine.setup(catalog, shuffledSetup, 1L), deck).shuffled shouldBe true
       stackOf(Engine.setup(catalog, setup), deck).shuffled shouldBe false
+
+    "carry a stack's layout onto the table" in:
+      stackOf(Engine.setup(playCatalog, playSetup), StackId("build-zone")).layout shouldBe Layout.Row
 
   "Engine.shuffle" should:
 

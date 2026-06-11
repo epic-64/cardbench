@@ -37,6 +37,18 @@
   font-size: 0.85rem;
 }
 
+/* A row zone lays its cards side by side; the label hugs the left edge above
+   the first card rather than centering over the spread. */
+.stack-row {
+  align-items: flex-start;
+}
+
+.zone-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
 .card {
   position: relative;
   width: var(--card-w);

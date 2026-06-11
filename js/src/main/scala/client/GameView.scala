@@ -64,18 +64,24 @@ object GameView:
         dragCard = None
 
     def stackView(stack: Stack): Element =
+      val body = stack.layout match
+        case Layout.Pile => topView(stack)
+        case Layout.Row  => rowView(stack)
+      // Controls (shuffle + move handle) only make sense for a multi-card pile; a
+      // single-card stack you nudge by its lone card, and a row zone stays put.
+      val controls =
+        if stack.layout == Layout.Pile && stack.cards.size > 1 then sideControls(stack) else emptyNode
       div(
         cls       := "stack",
         cls("stack-play") := (stack.id == SampleGame.playZone),
+        cls("stack-row") := (stack.layout == Layout.Row),
         cls("shuffling") <-- shuffling.signal.map(_.contains(stack.id)).distinct,
         styleAttr := s"left:${stack.position.x}px;top:${stack.position.y}px",
         onDragOver --> (e => e.preventDefault()),
         onDrop --> (e => onStackDrop(e, stack)),
         labelView(stack),
-        topView(stack),
-        // A single-card stack needs no controls: nothing to shuffle, and you can
-        // drag the lone card itself to move it.
-        if stack.cards.size > 1 then sideControls(stack) else emptyNode,
+        body,
+        controls,
       )
 
     // The count badge is only meaningful for a real pile; a lone card shows just
@@ -231,54 +237,65 @@ object GameView:
         onPointerCancel --> (_ => dragStack = None),
       )
 
+    // One card instance: draggable, click-to-flip, tagged with its id so the
+    // animator can find it. `depth` adds the layered-deck look; `badge` overlays
+    // a mark (e.g. the shuffle hint). Shared by the pile and row layouts.
+    def renderCard(stack: Stack, card: CardInstance, depth: Seq[String], badge: Node): Element =
+      val startDrag = onDragStart --> { e =>
+        val el = e.currentTarget.asInstanceOf[dom.html.Element]
+        val r  = el.getBoundingClientRect()
+        dragCard = Some(CardDrag(card.id, (e.clientX - r.left).toInt, (e.clientY - r.top).toInt))
+        e.dataTransfer.setData("text/plain", card.id.value)
+        // Hide the source after the browser has captured the drag ghost (it
+        // grabs the image synchronously at dragstart), so a lone card shows
+        // only the ghost and doesn't appear to split in two.
+        dom.window.setTimeout(() => el.classList.add("card-dragging"), 0)
+      }
+      val endDrag = onDragEnd --> { e =>
+        e.currentTarget.asInstanceOf[dom.html.Element].classList.remove("card-dragging")
+        dragCard = None
+      }
+      val flip = onClick --> (_ => if !animating then state.update(s => Engine.flip(s, card.id).getOrElse(s)))
+      card.facing match
+        case Facing.Down =>
+          div(
+            cls       := Seq("card", "card-back") ++ depth,
+            draggable := true,
+            dataAttr("card-id") := card.id.value,
+            startDrag,
+            endDrag,
+            flip,
+            badge,
+          )
+        case Facing.Up =>
+          val d = catalog.get(card.defId)
+          div(
+            cls       := Seq("card", "card-front") ++ depth,
+            draggable := true,
+            dataAttr("card-id") := card.id.value,
+            styleAttr := d.map(c => s"border-top:4px solid ${c.color}").getOrElse(""),
+            div(cls := "card-title", d.map(_.title).getOrElse(card.defId.value)),
+            div(cls := "card-desc", d.map(_.description).getOrElse("")),
+            startDrag,
+            endDrag,
+            flip,
+            badge,
+          )
+
+    // A pile shows only its top card: a layered look for depth, plus any shuffle badge.
     def topView(stack: Stack): Element =
       stack.cards.headOption match
         case None => div(cls := "card card-empty", "—")
         case Some(card) =>
-          val startDrag = onDragStart --> { e =>
-            val el = e.currentTarget.asInstanceOf[dom.html.Element]
-            val r  = el.getBoundingClientRect()
-            dragCard = Some(CardDrag(card.id, (e.clientX - r.left).toInt, (e.clientY - r.top).toInt))
-            e.dataTransfer.setData("text/plain", card.id.value)
-            // Hide the source after the browser has captured the drag ghost (it
-            // grabs the image synchronously at dragstart), so a lone card shows
-            // only the ghost and doesn't appear to split in two.
-            dom.window.setTimeout(() => el.classList.add("card-dragging"), 0)
-          }
-          val endDrag = onDragEnd --> { e =>
-            e.currentTarget.asInstanceOf[dom.html.Element].classList.remove("card-dragging")
-            dragCard = None
-          }
-          val flip    = onClick --> (_ => if !animating then state.update(s => Engine.flip(s, card.id).getOrElse(s)))
-          // 2+ cards get a layered "deck" look (see .card-stacked).
           val depth = if stack.cards.size > 1 then Seq("card-stacked") else Nil
-          // Marks a pile still sitting in its freshly shuffled order (see Stack.shuffled).
           val badge = if stack.shuffled then div(cls := "shuffle-badge", "⇄") else emptyNode
-          card.facing match
-            case Facing.Down =>
-              div(
-                cls       := Seq("card", "card-back") ++ depth,
-                draggable := true,
-                dataAttr("card-id") := card.id.value,
-                startDrag,
-                endDrag,
-                flip,
-                badge,
-              )
-            case Facing.Up =>
-              val d = catalog.get(card.defId)
-              div(
-                cls       := Seq("card", "card-front") ++ depth,
-                draggable := true,
-                dataAttr("card-id") := card.id.value,
-                styleAttr := d.map(c => s"border-top:4px solid ${c.color}").getOrElse(""),
-                div(cls := "card-title", d.map(_.title).getOrElse(card.defId.value)),
-                div(cls := "card-desc", d.map(_.description).getOrElse("")),
-                startDrag,
-                endDrag,
-                flip,
-                badge,
-              )
+          renderCard(stack, card, depth, badge)
+
+    // A row zone spreads every card side by side — oldest left, newest right, so a
+    // card dealt in animates into a fresh slot without nudging the others.
+    def rowView(stack: Stack): Element =
+      if stack.cards.isEmpty then div(cls := "card card-empty", "—")
+      else div(cls := "zone-row", stack.cards.reverse.map(renderCard(stack, _, Nil, emptyNode)))
 
     div(
       cls := "game",

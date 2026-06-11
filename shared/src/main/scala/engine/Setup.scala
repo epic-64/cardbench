@@ -37,6 +37,7 @@ case class StackSpec(
   contents: List[SpawnSpec],                      // expanded into instances, in order
   arrangement: Arrangement = Arrangement.Ordered, // how the spawned cards are arranged at setup
   persistent: Boolean = false,                    // an essential pile: kept on the table even at 0 cards
+  layout: Layout = Layout.Pile,                   // how the stack is shown: a heap (Pile) or a row of cards
 ) derives ReadWriter
 
 /** The starting table. */
