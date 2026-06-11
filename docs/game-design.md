@@ -266,7 +266,8 @@ this list on purpose: no single card "answers" them; you cash them in with
 
 ### How the player influences events — the four levers
 
-1. **Prevent** — play a defense (Test, Backup) into the Incoming window to cancel.
+1. **Prevent** — arm a defense (Test, Backup) *ahead of time* so it's already in
+   the Play area when the matching threat is drawn. You can't arm it in reaction.
 2. **Shrink** — keep Debt low so Disasters and Morale hits stay small (Refactor).
 3. **Adapt** — reshape with Agile Maneuver when a request is awkward or pivots.
 4. **Prepare** — bank Money against salaries and set up your hand to fulfill
@@ -305,7 +306,6 @@ sprints per act × 3 acts (see *Run structure*). Numbers below (hand size 5,
   they guard fires.
 - **Active Requests** — Customer / Stakeholder requests you're working, each
   with a deadline counter.
-- **Incoming slot** — telegraphed Disasters / Pivots waiting to resolve (see timing).
 - **Event Deck** (+ its discard) — the world's actions, shuffled per act; one
   card revealed per sprint.
 - **Debt supply** — shared stack of identical Debt cards; Build draws from it,
@@ -320,20 +320,25 @@ sprints per act × 3 acts (see *Run structure*). Numbers below (hand size 5,
 - **Tech Debt** — the Debt cards in your deck; not a number — you literally hold
   the junk.
 
-### Telegraph timing (the one rule to internalise)
+### Resolution timing (the one rule to internalise)
 
-A **Disaster or Pivot** drawn this sprint does **not** fire now. It goes
-face-up into the **Incoming slot** and **resolves at the end of the *next*
-sprint** — so you get one full Action phase to arm a defense (or decide the hit
-is small enough to eat). Requests and Boons resolve immediately; only Disasters
-and Pivots are telegraphed.
+Every event **resolves the instant it's revealed**, in the Event phase — before
+you take a single action. A disaster you draw this sprint hits *this sprint*, and
+the only thing that can stop it is a defense you **already armed** in a previous
+sprint. There's no warning and no reaction window: you either insured ahead of
+time or you didn't. Requests are the sole exception — they linger in Active
+Requests until you fulfil them or they expire.
 
 ### The five phases of a sprint
 
-**1 — Event phase.** Reveal the top Event card and place it:
+**1 — Event phase.** Reveal the top Event card and resolve it immediately:
 - *Request* (Customer → ★ / Stakeholder → ₿): put it in **Active Requests** with
-  its deadline counter.
-- *Disaster / Pivot*: put it in the **Incoming slot** (resolves end of next sprint).
+  its deadline counter (it lingers; it doesn't resolve now).
+- *Disaster*: it fires **now**. A defense you armed in an earlier sprint cancels
+  it (and is used up); otherwise apply the effect (e.g. lose ★ equal to the Debt
+  cards in your discard). Low Debt shrinks the hit either way.
+- *Pivot*: change the targeted Active Request's shape **now**; you deal with the
+  new shape during your Action phase (Agile Maneuver flexes it).
 - *Burnout*: check it now — 3+ Debt cards in hand means you take only **2**
   actions this sprint instead of 3.
 - *Quiet Sprint / Boon*: apply immediately (e.g. Quiet Sprint = no event at all).
@@ -353,11 +358,8 @@ one card from hand:
   next Bug/Audit (Test) or data-loss Disaster (Backup).
 
 **4 — Resolution phase**, in order:
-   a. **Incoming resolves** — any telegraphed card now due fires. An armed
-      defense cancels its matching threat (and is discarded, used up); otherwise
-      apply the effect (e.g. lose ★ equal to Debt cards in your discard).
-   b. **Fulfilled requests pay out** — gain ★ or ₿ per the request; it leaves play.
-   c. **Expired requests lapse** — tick every Active Request's deadline down; any
+   a. **Fulfilled requests pay out** — gain ★ or ₿ per the request; it leaves play.
+   b. **Expired requests lapse** — tick every Active Request's deadline down; any
       that hit zero unfulfilled inflict their ignore penalty and are discarded.
 
 **5 — Upkeep phase.**
@@ -376,20 +378,21 @@ every sprint, Debt cards keep coming back to clog future hands — you can't hol
 them aside. It also means you see your whole deck regularly, so Refactoring to
 thin it genuinely pays off.
 
-### One sprint, concretely (telegraph in action)
+### One sprint, concretely (the bet in action)
 
-- **Sprint 4, Event phase:** you reveal *Prod DB Gone* (Disaster). It goes to
-  **Incoming**, marked to resolve at the end of Sprint 5. Nothing happens yet.
-- **Sprint 4, Action phase:** you have a Backup in hand but spend your 3 actions
-  clearing a lucrative Stakeholder Request instead, betting you'll draw into a
-  defense. Salaries tick; sprint ends.
-- **Sprint 5, Action phase:** the Disaster is now about to resolve. You play
-  **Backup** into the Play area (1 action).
-- **Sprint 5, Resolution phase:** Incoming fires — the armed Backup **cancels**
-  *Prod DB Gone* and is used up. Had you not armed it, you'd have lost ★ equal to
-  the Debt cards sitting in your discard. The gamble paid off.
+- **Sprint 4, Action phase:** no disaster is in sight. You hold a **Backup**. Do
+  you arm it — burning an action and a play slot on insurance against a disaster
+  that may never come — or pour all 3 actions into a lucrative Stakeholder
+  Request? You bet on points and let the Backup hit the discard at sprint end.
+- **Sprint 5, Event phase:** you reveal *Prod DB Gone* (Disaster). It fires
+  **immediately**. Nothing is armed, so you lose ★ equal to the Debt cards sitting
+  in your discard. The bet against insurance just came due.
+- **The counterfactual:** had you armed the Backup back in Sprint 4, it would have
+  been waiting in the Play area and **cancelled** the disaster on reveal — but
+  arming every sprint, across the whole act, would have starved the capacity you
+  needed to score. Insurance is never free.
 
-Repeat for the act.
+Repeat for the act: every sprint is a wager on which threats are coming.
 
 ---
 
