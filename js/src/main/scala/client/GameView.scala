@@ -92,12 +92,19 @@ object GameView:
         moveHandle(stack),
       )
 
-    // Dropping a card onto a stack merges it on top.
+    // A card dropped onto a *different* stack merges on top. Dropped onto its own
+    // single-card stack it just repositions — so a lone card can be nudged
+    // anywhere, not only by dragging it clear of the stack's own bounds.
     def onStackDrop(e: dom.DragEvent, stack: Stack): Unit =
       dragCard.foreach: c =>
         e.preventDefault()
         e.stopPropagation()
-        state.update(s => Engine.move(s, c.id, stack.id).getOrElse(s))
+        val selfLone = stack.cards.size == 1 && stack.cards.exists(_.id == c.id)
+        val p        = boardPoint(e.clientX, e.clientY)
+        val verb: GameState => Either[EngineError, GameState] =
+          if selfLone then Engine.moveStack(_, stack.id, Position(clamp(p.x - c.offX), clamp(p.y - c.offY)))
+          else Engine.move(_, c.id, stack.id)
+        state.update(s => verb(s).getOrElse(s))
         dragCard = None
 
     // Pointer-driven, so movement is pixel-exact and starts immediately. We move
