@@ -32,6 +32,7 @@ object GameView:
     var dragCard: Option[CardDrag]   = None
     var dragStack: Option[StackDrag] = None
     var looseSeq                     = 0 // supplies fresh ids for stacks split off the board
+    var animating                    = false // true while a play's step script is running
 
     // Which stack is mid-shuffle: drives the shake animation, cleared on a timer.
     val shuffling = Var(Option.empty[StackId])
@@ -51,14 +52,16 @@ object GameView:
     // A card dropped on empty board space splits into a new stack at the point
     // under the cursor. Drops onto a stack are handled by the stack itself.
     def onBoardDrop(e: dom.DragEvent): Unit =
-      e.preventDefault()
-      val p = boardPoint(e.clientX, e.clientY)
-      dragCard.foreach: c =>
-        looseSeq += 1
-        val newId = StackId(s"loose#$looseSeq")
-        val to    = Position(clamp(p.x - c.offX), clamp(p.y - c.offY))
-        state.update(s => Engine.extractCard(s, c.id, newId, to).getOrElse(s))
-      dragCard = None
+      if animating then ()
+      else
+        e.preventDefault()
+        val p = boardPoint(e.clientX, e.clientY)
+        dragCard.foreach: c =>
+          looseSeq += 1
+          val newId = StackId(s"loose#$looseSeq")
+          val to    = Position(clamp(p.x - c.offX), clamp(p.y - c.offY))
+          state.update(s => Engine.extractCard(s, c.id, newId, to).getOrElse(s))
+        dragCard = None
 
     def stackView(stack: Stack): Element =
       div(
@@ -95,9 +98,10 @@ object GameView:
           onClick --> { _ =>
             // Mark the stack first so the re-rendered element mounts with the
             // animation class already on; a timer clears it once the shake ends.
-            shuffling.set(Some(stack.id))
-            dom.window.setTimeout(() => shuffling.set(None), shuffleAnimMs)
-            state.update(s => Engine.shuffle(s, stack.id, System.currentTimeMillis()).getOrElse(s))
+            if !animating then
+              shuffling.set(Some(stack.id))
+              dom.window.setTimeout(() => shuffling.set(None), shuffleAnimMs)
+              state.update(s => Engine.shuffle(s, stack.id, System.currentTimeMillis()).getOrElse(s))
           },
         ),
         moveHandle(stack),
@@ -113,24 +117,84 @@ object GameView:
         .flatMap(_.playsTo)
         .getOrElse(fallback)
 
+    // ── animated play ──────────────────────────────────────────────────────
+    // A play resolves as a script of atomic steps (Engine.playSteps); we run it
+    // one step at a time so each move/flip can animate, and ignore drops while a
+    // script is in flight (see `animating`).
+
+    def cardEl(card: CardId): Option[dom.html.Element] =
+      Option(board.ref.querySelector(s"[data-card-id=\"${card.value}\"]"))
+        .map(_.asInstanceOf[dom.html.Element])
+
+    // FLIP: the card has just re-rendered at its new home; slide it visually from
+    // `from` (where it sat a moment ago) to rest, so the jump reads as a glide.
+    def slide(card: CardId, from: Option[dom.DOMRect]): Unit =
+      (cardEl(card), from) match
+        case (Some(el), Some(f)) =>
+          val now = el.getBoundingClientRect()
+          el.style.zIndex = "10"
+          el.style.transition = "none"
+          el.style.transform = s"translate(${f.left - now.left}px, ${f.top - now.top}px)"
+          el.getBoundingClientRect() // force the start offset to register before transitioning
+          el.style.transition = s"transform ${moveAnimMs}ms ease"
+          el.style.transform = "translate(0px, 0px)"
+        case _ => ()
+
+    def flipReveal(card: CardId): Unit =
+      cardEl(card).foreach(_.classList.add("card-flipping"))
+
+    def animateStep(step: Step, done: () => Unit): Unit =
+      step match
+        case Step.Move(card, to) =>
+          val from = cardEl(card).map(_.getBoundingClientRect())
+          state.update(s => Engine.move(s, card, to).getOrElse(s))
+          slide(card, from)
+          dom.window.setTimeout(() => done(), moveAnimMs)
+        case Step.Flip(card) =>
+          state.update(s => Engine.flip(s, card).getOrElse(s))
+          flipReveal(card)
+          dom.window.setTimeout(() => done(), flipAnimMs)
+
+    def runScript(steps: List[Step]): Unit =
+      def loop(remaining: List[Step]): Unit =
+        remaining match
+          case Nil          => animating = false
+          case step :: rest => animateStep(step, () => loop(rest))
+      animating = true
+      loop(steps)
+
+    // Build the play's script — effects, then the card to its post-play home —
+    // prefixed by the card sliding into the play zone itself, so it visibly lands
+    // there before resolving. A play with nothing to do (Left) is simply dropped.
+    def playAnimated(card: CardId): Unit =
+      val s0   = state.now()
+      val dest = destinationOf(s0, card, SampleGame.playZone)
+      Engine.playSteps(s0, card, dest).foreach: effectSteps =>
+        val script =
+          if dest == SampleGame.playZone then effectSteps
+          else Step.Move(card, SampleGame.playZone) :: effectSteps
+        runScript(script)
+
     // A card dropped onto a *different* stack merges on top. Dropped onto its own
     // single-card stack it just repositions — so a lone card can be nudged
     // anywhere, not only by dragging it clear of the stack's own bounds. Dropped
-    // onto the play zone (and not already in it) it's played: effects resolve,
-    // then it moves on to its post-play destination.
+    // onto the play zone (and not already in it) it's played, animating.
     def onStackDrop(e: dom.DragEvent, stack: Stack): Unit =
-      dragCard.foreach: c =>
-        e.preventDefault()
-        e.stopPropagation()
-        val selfLone    = stack.cards.size == 1 && stack.cards.exists(_.id == c.id)
-        val playingHere = stack.id == SampleGame.playZone && !stack.cards.exists(_.id == c.id)
-        val p           = boardPoint(e.clientX, e.clientY)
-        val verb: GameState => Either[EngineError, GameState] =
-          if selfLone then Engine.moveStack(_, stack.id, Position(clamp(p.x - c.offX), clamp(p.y - c.offY)))
-          else if playingHere then s => Engine.play(s, c.id, destinationOf(s, c.id, stack.id))
-          else Engine.move(_, c.id, stack.id)
-        state.update(s => verb(s).getOrElse(s))
-        dragCard = None
+      if animating then ()
+      else
+        dragCard.foreach: c =>
+          e.preventDefault()
+          e.stopPropagation()
+          val selfLone    = stack.cards.size == 1 && stack.cards.exists(_.id == c.id)
+          val playingHere = stack.id == SampleGame.playZone && !stack.cards.exists(_.id == c.id)
+          val p           = boardPoint(e.clientX, e.clientY)
+          dragCard = None
+          if playingHere then playAnimated(c.id)
+          else
+            val verb: GameState => Either[EngineError, GameState] =
+              if selfLone then Engine.moveStack(_, stack.id, Position(clamp(p.x - c.offX), clamp(p.y - c.offY)))
+              else Engine.move(_, c.id, stack.id)
+            state.update(s => verb(s).getOrElse(s))
 
     // Pointer-driven, so movement is pixel-exact and starts immediately. We move
     // the live element directly during the drag (no re-render churn that would
@@ -141,14 +205,15 @@ object GameView:
         title := "Drag to move this stack",
         "⠿",
         onPointerDown --> { e =>
-          e.preventDefault()
-          val handle  = e.currentTarget.asInstanceOf[dom.Element]
-          val stackEl = handle.parentNode.parentNode.asInstanceOf[dom.html.Element]
-          val grab    = boardPoint(e.clientX, e.clientY)
-          // setPointerCapture keeps move/up events on the handle once the cursor
-          // leaves it; it's missing from this scala-js-dom facade, so call it raw.
-          handle.asInstanceOf[js.Dynamic].setPointerCapture(e.pointerId)
-          dragStack = Some(StackDrag(stackEl, grab.x - stack.position.x, grab.y - stack.position.y))
+          if !animating then
+            e.preventDefault()
+            val handle  = e.currentTarget.asInstanceOf[dom.Element]
+            val stackEl = handle.parentNode.parentNode.asInstanceOf[dom.html.Element]
+            val grab    = boardPoint(e.clientX, e.clientY)
+            // setPointerCapture keeps move/up events on the handle once the cursor
+            // leaves it; it's missing from this scala-js-dom facade, so call it raw.
+            handle.asInstanceOf[js.Dynamic].setPointerCapture(e.pointerId)
+            dragStack = Some(StackDrag(stackEl, grab.x - stack.position.x, grab.y - stack.position.y))
         },
         onPointerMove --> { e =>
           dragStack.foreach: d =>
@@ -184,19 +249,28 @@ object GameView:
             e.currentTarget.asInstanceOf[dom.html.Element].classList.remove("card-dragging")
             dragCard = None
           }
-          val flip    = onClick --> (_ => state.update(s => Engine.flip(s, card.id).getOrElse(s)))
+          val flip    = onClick --> (_ => if !animating then state.update(s => Engine.flip(s, card.id).getOrElse(s)))
           // 2+ cards get a layered "deck" look (see .card-stacked).
           val depth = if stack.cards.size > 1 then Seq("card-stacked") else Nil
           // Marks a pile still sitting in its freshly shuffled order (see Stack.shuffled).
           val badge = if stack.shuffled then div(cls := "shuffle-badge", "⇄") else emptyNode
           card.facing match
             case Facing.Down =>
-              div(cls := Seq("card", "card-back") ++ depth, draggable := true, startDrag, endDrag, flip, badge)
+              div(
+                cls       := Seq("card", "card-back") ++ depth,
+                draggable := true,
+                dataAttr("card-id") := card.id.value,
+                startDrag,
+                endDrag,
+                flip,
+                badge,
+              )
             case Facing.Up =>
               val d = catalog.get(card.defId)
               div(
                 cls       := Seq("card", "card-front") ++ depth,
                 draggable := true,
+                dataAttr("card-id") := card.id.value,
                 styleAttr := d.map(c => s"border-top:4px solid ${c.color}").getOrElse(""),
                 div(cls := "card-title", d.map(_.title).getOrElse(card.defId.value)),
                 div(cls := "card-desc", d.map(_.description).getOrElse("")),
@@ -215,3 +289,8 @@ object GameView:
 
   // Kept in step with the .stack.shuffling animation duration in engine.css.
   private val shuffleAnimMs = 450
+
+  // How long a single played card's slide / flip takes. The flip value is mirrored
+  // by the .card-flipping animation duration in engine.css.
+  private val moveAnimMs = 320
+  private val flipAnimMs = 320

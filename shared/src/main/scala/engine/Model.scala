@@ -46,10 +46,19 @@ object Facing:
 
 /** A consequence of playing a card. The vocabulary is deliberately tiny: the
   * single primitive `Deal` moves `count` cards from the top of one stack onto
-  * the top of another. Anything richer is composed from more of these.
+  * the top of another, flipping each face-up if `reveal` is set. Anything richer
+  * is composed from more of these.
   */
 enum Effect derives ReadWriter:
-  case Deal(from: StackId, to: StackId, count: Int)
+  case Deal(from: StackId, to: StackId, count: Int, reveal: Boolean = false)
+
+/** One atomic, animatable move in a play's resolution: relocate a single card,
+  * or flip one. `Engine.playSteps` emits these in order so the shell can animate
+  * them one by one; `Engine.play` simply applies them all at once.
+  */
+enum Step:
+  case Move(card: CardId, to: StackId)
+  case Flip(card: CardId)
 
 /** Authored content — the "front" of a card. `effects` are resolved, in order,
   * when the card is played (see `Engine.play`); a card with none is inert.

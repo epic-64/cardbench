@@ -267,6 +267,11 @@ A small, opt-in step beyond the bare table, still game-agnostic: cards can carry
   moves the played instance onto `to`. Effects are threaded through `Either`, so
   a failing effect (e.g. dealing from an empty pile) aborts the whole play and
   leaves the original state untouched — playing is all-or-nothing.
+- **`Engine.playSteps`** returns the same resolution as an ordered list of atomic
+  `Step`s (`Move` / `Flip`) instead of one final state. `play` is just
+  `applySteps`; the animated shell instead applies them one at a time so each
+  move and reveal can animate in sequence. A `Deal` with `reveal = true` adds a
+  `Flip` after each move, turning the dealt card face-up where it lands.
 - **Persistent stacks.** A `Stack`/`StackSpec` flagged `persistent` stays on the
   table even at zero cards, so a player's deck, discard, or building zone can
   always be targeted by an effect. Ordinary stacks still vanish when emptied.
@@ -278,9 +283,10 @@ A small, opt-in step beyond the bare table, still game-agnostic: cards can carry
   resolve, and the card moves on to its destination (so the zone clears again
   unless the card has no `playsTo`).
 
-Example (the `build` card in `SampleGame`): playing it deals two Tech Debt into
-the player's discard and draws one feature into the building zone, then — via its
-`playsTo` — the spent build card goes to the discard.
+Example (the `build` card in `SampleGame`): playing it draws one feature into the
+building zone (revealed), then deals two Tech Debt into the player's discard
+(revealed), then — via its `playsTo` — the spent build card moves to the discard.
+The shell animates these steps one after another rather than snapping to the end.
 
 | #  | Goal                                  | Entry point         | Done when                                                                                              |
 |----|---------------------------------------|---------------------|-------------------------------------------------------------------------------------------------------|
