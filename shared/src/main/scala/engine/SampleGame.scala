@@ -133,5 +133,16 @@ object SampleGame:
         Nil,
         persistent = true,
       ),
+      // The player's hand: a face-up row of cards you drag onto the play zone. A
+      // small opening hand so there's something to play right away.
+      StackSpec(
+        StackId("hand"),
+        "Hand",
+        Position(40, 480),
+        Facing.Up,
+        List.empty,
+        persistent = true,
+        layout = Layout.Row,
+      ),
     ),
   )
