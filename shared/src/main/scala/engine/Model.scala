@@ -50,8 +50,8 @@ case class CardDef(id: CardDefId, color: String, title: String, description: Str
 /** A physical card on the table: one instance of a definition. */
 case class CardInstance(id: CardId, defId: CardDefId, facing: Facing)
 
-/** A table coordinate. Grid slots in v0. */
-case class Position(col: Int, row: Int) derives ReadWriter
+/** A free-form table coordinate in board pixels. */
+case class Position(x: Int, y: Int) derives ReadWriter
 
 /** An ordered pile. `cards.head` = top of the stack. */
 case class Stack(id: StackId, label: String, position: Position, cards: List[CardInstance])
