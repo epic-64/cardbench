@@ -36,7 +36,7 @@ class EngineSpec extends AnyWordSpec with Matchers:
         Position(1, 1),
         Facing.Down,
         List(SpawnSpec(CardDefId("build"), 8), SpawnSpec(CardDefId("refactor"), 4)),
-        shuffled = true,
+        arrangement = Arrangement.Shuffled,
       ),
     ),
   )
