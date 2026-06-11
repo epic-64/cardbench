@@ -7,16 +7,26 @@ object SampleGame:
 
   val catalog: CardCatalog = CardCatalog(
     List(
-      // action cards
+      // HAND CARDS
       CardDef(CardDefId("build"), "#3b82f6", "Build", "Ship a feature to fulfil a Request."),
-      CardDef(CardDefId("refactor"), "#22c55e", "Refactor", "Trash 1 Debt card."),
-
-      // addons
-      CardDef(CardDefId("test"), "#eab308", "Test", "Prevent the next Bug / Audit event."),
+      CardDef(CardDefId("refactor"), "#22c55e", "Refactor", "Remove 2 debt cards from your hand or deck."),
+      CardDef(CardDefId("test"), "#eab308", "Test", "Prevent the next Bug event."),
       CardDef(CardDefId("backup"), "#a855f7", "Backup", "Prevent the next data-loss disaster."),
-
-      // special
       CardDef(CardDefId("debt"), "#6b7280", "Tech Debt", "Dead weight. Clogs your hand."),
+      CardDef(CardDefId("crunch"), "#f97316", "Crunch", "FREE: add a Tech Debt to your deck, then play an additional card this turn."),
+      CardDef(CardDefId("modular-design"), "#14b8a6", "Modular Design", "FREE: move one feature to a different project."),
+
+      // PROJECT CARDS
+      CardDef(CardDefId("feature-green"), "#16a34a", "Feature (Green)", "A shipped feature. Fills out a project."),
+      CardDef(CardDefId("feature-blue"), "#2563eb", "Feature (Blue)", "A shipped feature. Fills out a project."),
+      CardDef(CardDefId("feature-red"), "#ef4444", "Feature (Red)", "A shipped feature. Fills out a project."),
+
+      // EVENT CARDS
+      CardDef(CardDefId("bug"), "#dc2626", "Bug", "Delete one feature, unless it is protected by a Test."),
+      CardDef(CardDefId("data-loss"), "#7f1d1d", "Data Loss", "For every Tech Debt in your hand, delete one feature from your largest project."),
+      CardDef(CardDefId("stakeholder-pivot"), "#db2777", "Stakeholder Pivot", "Replace the middle feature of a customer project with a new card from the feature deck."),
+      CardDef(CardDefId("burnout"), "#ea580c", "Burnout", "If you have two or more Tech Debt cards, discard one non-debt card from your hand."),
+      CardDef(CardDefId("ci-cd"), "#0891b2", "CI/CD", "If you have 2 or more Tests in play, draw a card and play an additional card this turn."),
     ),
   )
 
@@ -32,16 +42,34 @@ object SampleGame:
         List(
           SpawnSpec(CardDefId("build"), 8),
           SpawnSpec(CardDefId("refactor"), 4),
+          SpawnSpec(CardDefId("crunch"), 2),
+          SpawnSpec(CardDefId("modular-design"), 2),
+          SpawnSpec(CardDefId("test"), 2),
+          SpawnSpec(CardDefId("backup"), 2),
         ),
       ),
       StackSpec(
-        StackId("tools"),
-        "Tools",
-        Position(260, 40),
+        StackId("features"),
+        "Feature Deck",
+        Position(480, 40),
         Facing.Down,
         List(
-          SpawnSpec(CardDefId("test"), 2),
-          SpawnSpec(CardDefId("backup"), 2),
+          SpawnSpec(CardDefId("feature-green"), 4),
+          SpawnSpec(CardDefId("feature-blue"), 4),
+          SpawnSpec(CardDefId("feature-red"), 4),
+        ),
+      ),
+      StackSpec(
+        StackId("events"),
+        "Event Deck",
+        Position(700, 40),
+        Facing.Down,
+        List(
+          SpawnSpec(CardDefId("bug"), 3),
+          SpawnSpec(CardDefId("data-loss"), 2),
+          SpawnSpec(CardDefId("stakeholder-pivot"), 2),
+          SpawnSpec(CardDefId("burnout"), 2),
+          SpawnSpec(CardDefId("ci-cd"), 2),
         ),
       ),
     ),
