@@ -49,6 +49,15 @@ object SampleGame:
         ),
       ),
       StackSpec(
+        StackId("debt"),
+        "Tech Debt",
+        Position(260, 40),
+        Facing.Down,
+        List(
+          SpawnSpec(CardDefId("debt"), 8),
+        ),
+      ),
+      StackSpec(
         StackId("features"),
         "Feature Deck",
         Position(480, 40),
