@@ -15,6 +15,8 @@ object SampleGame:
     ),
   )
 
+  // No empty stacks: a stack exists only while it holds cards. You make new
+  // piles mid-game by dragging a card onto empty board space.
   val setup: GameSetup = GameSetup(
     List(
       StackSpec(
@@ -25,11 +27,17 @@ object SampleGame:
         List(
           SpawnSpec(CardDefId("build"), 8),
           SpawnSpec(CardDefId("refactor"), 4),
+        ),
+      ),
+      StackSpec(
+        StackId("tools"),
+        "Tools",
+        Position(260, 40),
+        Facing.Up,
+        List(
           SpawnSpec(CardDefId("test"), 2),
           SpawnSpec(CardDefId("backup"), 2),
         ),
       ),
-      StackSpec(StackId("discard"), "Discard", Position(260, 40), Facing.Up, Nil),
-      StackSpec(StackId("play"), "Play Area", Position(480, 40), Facing.Up, Nil),
     ),
   )

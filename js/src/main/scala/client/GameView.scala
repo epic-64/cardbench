@@ -99,6 +99,10 @@ object GameView:
           val offX = (e.clientX - b.left - stack.position.x).toInt
           val offY = (e.clientY - b.top - stack.position.y).toInt
           drag = Some(Drag.OfStack(stack.id, offX, offY))
+          // Drag the ghost of the whole stack, not just the handle. The handle
+          // is nested handle → .stack-side → .stack.
+          val stackEl = e.currentTarget.asInstanceOf[dom.Node].parentNode.parentNode.asInstanceOf[dom.Element]
+          e.dataTransfer.setDragImage(stackEl, offX, offY)
           e.dataTransfer.setData("text/plain", stack.id.value)
         },
         onDragEnd --> (_ => drag = None),

@@ -30,6 +30,14 @@ class EngineSpec extends AnyWordSpec with Matchers:
   private val deck    = StackId("deck")
   private val discard = StackId("discard")
 
+  // Two single-card stacks, for exercising "a stack ceases to exist at 0 cards".
+  private val solo = GameSetup(
+    List(
+      StackSpec(StackId("a"), "A", Position(0, 0), Facing.Up, List(SpawnSpec(CardDefId("build"), 1))),
+      StackSpec(StackId("b"), "B", Position(0, 0), Facing.Up, List(SpawnSpec(CardDefId("build"), 1))),
+    ),
+  )
+
   private def stackOf(state: GameState, id: StackId): Stack =
     state.stacks.find(_.id == id).get
 
@@ -85,6 +93,11 @@ class EngineSpec extends AnyWordSpec with Matchers:
         EngineError.UnknownCard(CardId("ghost")),
       )
 
+    "remove the source stack once its last card leaves" in:
+      val moved = Engine.move(Engine.setup(catalog, solo), CardId("a#0"), StackId("b")).toOption.get
+      moved.stacks.exists(_.id == StackId("a")) shouldBe false
+      stackOf(moved, StackId("b")).cards.size shouldBe 2
+
   "Engine.flip" should:
 
     "turn a face-down card face-up and leave the rest alone" in:
@@ -119,6 +132,11 @@ class EngineSpec extends AnyWordSpec with Matchers:
       Engine.extractCard(Engine.setup(catalog, setup), CardId("ghost"), StackId("loose"), Position(0, 0)) shouldBe Left(
         EngineError.UnknownCard(CardId("ghost")),
       )
+
+    "remove the source stack when extracting its only card" in:
+      val out = Engine.extractCard(Engine.setup(catalog, solo), CardId("a#0"), StackId("loose"), Position(5, 5)).toOption.get
+      out.stacks.exists(_.id == StackId("a")) shouldBe false
+      stackOf(out, StackId("loose")).cards.map(_.id) shouldBe List(CardId("a#0"))
 
   "JSON codecs" should:
 
