@@ -56,10 +56,20 @@ object GameView:
         styleAttr := s"left:${stack.position.x}px;top:${stack.position.y}px",
         onDragOver --> (e => e.preventDefault()),
         onDrop --> (e => onStackDrop(e, stack)),
-        div(cls := "stack-label", s"${stack.label} (${stack.cards.size})".trim),
+        labelView(stack),
         topView(stack),
-        sideControls(stack),
+        // A single-card stack needs no controls: nothing to shuffle, and you can
+        // drag the lone card itself to move it.
+        if stack.cards.size > 1 then sideControls(stack) else emptyNode,
       )
+
+    // The count badge is only meaningful for a real pile; a lone card shows just
+    // its label (and a loose, unlabelled card shows nothing).
+    def labelView(stack: Stack): Node =
+      val count = stack.cards.size
+      if count > 1 then div(cls := "stack-label", s"${stack.label} ($count)".trim)
+      else if stack.label.nonEmpty then div(cls := "stack-label", stack.label)
+      else emptyNode
 
     // A vertical control column hugging the stack's bottom-right: a small
     // shuffle button above the drag-to-move handle.
@@ -119,13 +129,15 @@ object GameView:
           }
           val endDrag = onDragEnd --> (_ => drag = None)
           val flip    = onClick --> (_ => state.update(s => Engine.flip(s, card.id).getOrElse(s)))
+          // 2+ cards get a layered "deck" look (see .card-stacked).
+          val depth = if stack.cards.size > 1 then Seq("card-stacked") else Nil
           card.facing match
             case Facing.Down =>
-              div(cls := "card card-back", draggable := true, startDrag, endDrag, flip)
+              div(cls := Seq("card", "card-back") ++ depth, draggable := true, startDrag, endDrag, flip)
             case Facing.Up =>
               val d = catalog.get(card.defId)
               div(
-                cls       := "card card-front",
+                cls       := Seq("card", "card-front") ++ depth,
                 draggable := true,
                 styleAttr := d.map(c => s"border-top:4px solid ${c.color}").getOrElse(""),
                 div(cls := "card-title", d.map(_.title).getOrElse(card.defId.value)),
