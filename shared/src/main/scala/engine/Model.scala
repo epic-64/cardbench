@@ -53,6 +53,8 @@ enum Effect derives ReadWriter:
 
 /** Authored content — the "front" of a card. `effects` are resolved, in order,
   * when the card is played (see `Engine.play`); a card with none is inert.
+  * `playsTo` is the pile the card lands in after being played — authored data the
+  * shell hands to `play` as its `to`; `None` means it stays in the play zone.
   */
 case class CardDef(
   id: CardDefId,
@@ -60,6 +62,7 @@ case class CardDef(
   title: String,
   description: String,
   effects: List[Effect] = Nil,
+  playsTo: Option[StackId] = None,
 ) derives ReadWriter
 
 /** A physical card on the table: one instance of a definition. */

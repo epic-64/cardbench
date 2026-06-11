@@ -5,6 +5,11 @@ package engine
   */
 object SampleGame:
 
+  /** The pile that resolves a card when you drop one onto it. Dragging a card
+    * here plays it (its effects fire) and sends it to its `playsTo` destination.
+    */
+  val playZone: StackId = StackId("play")
+
   val catalog: CardCatalog = CardCatalog(
     List(
       // HAND CARDS
@@ -19,6 +24,7 @@ object SampleGame:
           // …and you draw a feature into your building zone.
           Effect.Deal(StackId("features"), StackId("build-zone"), 1),
         ),
+        playsTo = Some(StackId("discard")), // the spent Build card goes to discard
       ),
       CardDef(CardDefId("refactor"), "#22c55e", "Refactor", "Remove 2 debt cards from your hand or deck."),
       CardDef(CardDefId("test"), "#eab308", "Test", "Prevent the next Bug event."),
@@ -112,6 +118,16 @@ object SampleGame:
         StackId("build-zone"),
         "Building",
         Position(260, 260),
+        Facing.Up,
+        Nil,
+        persistent = true,
+      ),
+      // Drop a card here to play it: its effects resolve and it moves on to its
+      // post-play destination (see CardDef.playsTo).
+      StackSpec(
+        playZone,
+        "Play",
+        Position(480, 260),
         Facing.Up,
         Nil,
         persistent = true,

@@ -63,6 +63,7 @@ object GameView:
     def stackView(stack: Stack): Element =
       div(
         cls       := "stack",
+        cls("stack-play") := (stack.id == SampleGame.playZone),
         cls("shuffling") <-- shuffling.signal.map(_.contains(stack.id)).distinct,
         styleAttr := s"left:${stack.position.x}px;top:${stack.position.y}px",
         onDragOver --> (e => e.preventDefault()),
@@ -102,17 +103,31 @@ object GameView:
         moveHandle(stack),
       )
 
+    // Where a played card lands: its def's authored `playsTo`, or the play zone
+    // itself if it has none (so the card just stays in play).
+    def destinationOf(s: GameState, card: CardId, fallback: StackId): StackId =
+      s.stacks
+        .flatMap(_.cards)
+        .find(_.id == card)
+        .flatMap(inst => catalog.get(inst.defId))
+        .flatMap(_.playsTo)
+        .getOrElse(fallback)
+
     // A card dropped onto a *different* stack merges on top. Dropped onto its own
     // single-card stack it just repositions — so a lone card can be nudged
-    // anywhere, not only by dragging it clear of the stack's own bounds.
+    // anywhere, not only by dragging it clear of the stack's own bounds. Dropped
+    // onto the play zone (and not already in it) it's played: effects resolve,
+    // then it moves on to its post-play destination.
     def onStackDrop(e: dom.DragEvent, stack: Stack): Unit =
       dragCard.foreach: c =>
         e.preventDefault()
         e.stopPropagation()
-        val selfLone = stack.cards.size == 1 && stack.cards.exists(_.id == c.id)
-        val p        = boardPoint(e.clientX, e.clientY)
+        val selfLone    = stack.cards.size == 1 && stack.cards.exists(_.id == c.id)
+        val playingHere = stack.id == SampleGame.playZone && !stack.cards.exists(_.id == c.id)
+        val p           = boardPoint(e.clientX, e.clientY)
         val verb: GameState => Either[EngineError, GameState] =
           if selfLone then Engine.moveStack(_, stack.id, Position(clamp(p.x - c.offX), clamp(p.y - c.offY)))
+          else if playingHere then s => Engine.play(s, c.id, destinationOf(s, c.id, stack.id))
           else Engine.move(_, c.id, stack.id)
         state.update(s => verb(s).getOrElse(s))
         dragCard = None
