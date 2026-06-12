@@ -13,7 +13,9 @@
   height: calc(100vh - 2 * var(--gap));
 }
 
-/* Free-form board: stacks are absolutely positioned by their pixel Position. */
+/* Free-form board: the fixed viewport. Stacks live in `.world` inside it, which
+   pans and zooms; the board clips whatever spills past its edges. We drive pan and
+   zoom ourselves, so opt out of the browser's own touch gestures. */
 .board {
   position: relative;
   width: 100%;
@@ -22,6 +24,20 @@
   border-radius: var(--radius);
   background: rgba(255, 255, 255, 0.015);
   overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+}
+
+/* The pannable, zoomable layer the stacks are positioned within. Zero-size so it
+   never intercepts pointer events on empty board space; its absolutely-positioned
+   stacks render and stay interactive regardless. */
+.world {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  transform-origin: 0 0;
 }
 
 .stack {
