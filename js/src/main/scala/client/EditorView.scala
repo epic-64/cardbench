@@ -23,6 +23,12 @@ object EditorView:
   ): Element =
     val draft = Var(initial)
 
+    // Bumped whenever an effect is reordered. The effect rows otherwise rebuild
+    // only when the *kinds* of effects change, so swapping two same-kind effects
+    // (two Deals, say) wouldn't refresh their uncontrolled fields — this tick
+    // forces the rebuild that re-reads each row's new position.
+    val reorderTick = Var(0)
+
     // The live id pools the reference drop-downs choose from: card ids for triggers
     // and stack contents, stack ids for triggers and effects. `.distinct` keeps a
     // box from rebuilding unless the *set of ids* actually changes (not on every
@@ -98,32 +104,47 @@ object EditorView:
         updateRule(i)(r => r.copy(effects = r.effects.lift(j).fold(r.effects)(e => r.effects.updated(j, withEffectKind(e, kind)))))
       def removeEffect(): Unit =
         updateRule(i)(r => r.copy(effects = r.effects.patch(j, Nil, 1)))
+      // Swap this effect with its neighbour `delta` away, then nudge `reorderTick`
+      // so the rows rebuild even when the two share a kind.
+      def moveEffect(delta: Int): Unit =
+        updateRule(i): r =>
+          val k = j + delta
+          r.effects.lift(k).fold(r)(_ => r.copy(effects = r.effects.updated(j, r.effects(k)).updated(k, r.effects(j))))
+        reorderTick.update(_ + 1)
       def dealField(pick: Effect.Deal => String): Signal[String] =
         draft.signal.map(_.rulebook.rules.lift(i).flatMap(_.effects.lift(j)) match { case Some(d: Effect.Deal) => pick(d); case _ => "" }).distinct
       def shuffleField: Signal[String] =
         draft.signal.map(_.rulebook.rules.lift(i).flatMap(_.effects.lift(j)) match { case Some(s: Effect.Shuffle) => s.stack.value; case _ => "" }).distinct
       val effect    = draft.now().rulebook.rules(i).effects(j)
+      val count     = draft.now().rulebook.rules(i).effects.size
       // One type select per effect; picking another kind rewrites this slot. The
       // type-specific fields follow. (The row rebuilds on a kind change — see
       // `effectKinds` in `ruleRow` — so the right fields always show.)
       val kindField = selectField("Effect", effectKindOptions, effectKind(effect), setEffectKind)
+      // Reorder/remove controls, grouped and pinned to the right of each effect.
+      val actions = div(
+        cls := "editor-effect-actions",
+        if j > 0 then moveButton("↑", "Move up", () => moveEffect(-1)) else emptyNode,
+        if j < count - 1 then moveButton("↓", "Move down", () => moveEffect(1)) else emptyNode,
+        removeButton(() => removeEffect()),
+      )
       effect match
-        case Effect.Deal(_, _, count, facing) =>
+        case Effect.Deal(_, _, dealCount, facing) =>
           div(
             cls := "editor-effect",
             kindField,
             idSelectField("from", stackIds, dealField(_.from.value), v => updateDeal(_.copy(from = StackId(v)))),
             idSelectField("to", stackIds, dealField(_.to.value), v => updateDeal(_.copy(to = StackId(v)))),
-            numberField("Count", count, n => updateDeal(_.copy(count = n))),
+            numberField("Count", dealCount, n => updateDeal(_.copy(count = n))),
             selectField("Facing", targetFacingOptions, facing, f => updateDeal(_.copy(targetFacing = f))),
-            removeButton(() => removeEffect()),
+            actions,
           )
         case _: Effect.Shuffle =>
           div(
             cls := "editor-effect",
             kindField,
             idSelectField("Stack", stackIds, shuffleField, v => updateShuffle(_.copy(stack = StackId(v)))),
-            removeButton(() => removeEffect()),
+            actions,
           )
 
     def ruleRow(i: Int): Element =
@@ -152,7 +173,7 @@ object EditorView:
             span(cls := "rule-badge rule-badge-then", "Then"),
             addButton("+ Add effect", () => updateRule(i)(r => r.copy(effects = r.effects :+ Effect.Deal(StackId(""), StackId(""))))),
           ),
-          div(cls := "editor-effects", children <-- effectKinds.map(kinds => kinds.indices.toList.map(j => effectRow(i, j)))),
+          div(cls := "editor-effects", children <-- effectKinds.combineWith(reorderTick.signal).map((kinds, _) => kinds.indices.toList.map(j => effectRow(i, j)))),
         ),
       )
 

@@ -112,6 +112,9 @@ object EditorFields:
   def removeButton(onRemove: () => Unit): Element =
     button(cls := "btn btn-danger btn-icon", title := "Remove", "✕", onClick --> (_ => onRemove()))
 
+  def moveButton(glyph: String, titleText: String, onMove: () => Unit): Element =
+    button(cls := "btn btn-icon", title := titleText, glyph, onClick --> (_ => onMove()))
+
   def duplicateButton(onDuplicate: () => Unit): Element =
     button(cls := "btn btn-icon", title := "Duplicate", "⧉", onClick --> (_ => onDuplicate()))
 

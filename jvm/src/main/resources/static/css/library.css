@@ -420,7 +420,11 @@
   padding: var(--gap-sm);
 }
 
-.editor-effect > .btn-danger {
+/* Reorder/remove controls, kept together and pushed to the row's right edge. */
+.editor-effect-actions {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--gap-sm);
   margin-left: auto;
 }
 
