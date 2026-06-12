@@ -17,6 +17,7 @@ object LibraryView:
     library: Var[List[GameDefinition]],
     onPlay: GameDefinition => Unit,
     onEdit: GameDefinition => Unit,
+    onFineTune: GameDefinition => Unit,
   ): Element =
 
     // Import as a brand-new entry (fresh id) so bringing a file in never silently
@@ -48,6 +49,7 @@ object LibraryView:
           cls := "game-card-actions",
           button(cls := "btn btn-primary", "Play", onClick --> (_ => onPlay(d))),
           button(cls := "btn", "Edit", onClick --> (_ => onEdit(d))),
+          button(cls := "btn", "Layout", onClick --> (_ => onFineTune(d))),
           button(cls := "btn", "Export", onClick --> (_ => exportGame(d))),
           button(cls := "btn btn-danger", "Delete", onClick --> (_ => deleteGame(d))),
         ),
