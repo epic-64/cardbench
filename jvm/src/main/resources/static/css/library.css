@@ -396,8 +396,12 @@
   line-height: 1.4;
 }
 
-/* Let the description field break onto its own full-width line in the row. */
-.field:has(.field-textarea) {
+/* Let the description field break onto its own full-width line in a row. Scoped
+   to row contexts: in the column-flex card body, flex-basis 100% would mean the
+   tile's full *height*, stretching the field into whitespace and pushing the
+   colour/actions row out of the (overflow: hidden) tile. */
+.editor-row .field:has(.field-textarea),
+.editor-subrow .field:has(.field-textarea) {
   flex: 1 0 100%;
 }
 
