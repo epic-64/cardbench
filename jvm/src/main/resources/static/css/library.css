@@ -391,7 +391,7 @@
    the full width of its wrapping row and can be dragged taller by the user. */
 .field-textarea {
   width: 100%;
-  min-height: 4.5rem;
+  min-height: 7rem;
   resize: vertical;
   line-height: 1.4;
 }

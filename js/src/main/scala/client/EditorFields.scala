@@ -30,7 +30,7 @@ object EditorFields:
       name,
       textArea(
         cls := "field-input field-textarea",
-        rows := 4,
+        rows := 6,
         defaultValue := initial,
         onInput.mapToValue --> (v => onChanged(v)),
       ),
