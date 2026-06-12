@@ -6,6 +6,11 @@
   --danger: #f87171;
   --danger-border: rgba(248, 113, 113, 0.4);
   --grid-line: rgba(255, 255, 255, 0.05);
+  /* A second accent (teal) pairs with the purple --accent to tell a rule's
+     "When" trigger from its "Then" effects at a glance. */
+  --accent-2: #5eead4;
+  --accent-soft: rgba(184, 132, 255, 0.16);
+  --accent-2-soft: rgba(94, 234, 212, 0.16);
 }
 
 /* The app frame: full height, one --gap of breathing room, screens stacked. */
@@ -350,13 +355,92 @@
   gap: var(--gap-sm);
 }
 
-/* A row that also stacks its own sub-block (effects, contents) beneath itself. */
-.editor-row-block {
+/* ── rules ────────────────────────────────────────────────────────────────── */
+
+/* Each rule is a tile: a "When" trigger up top, then a divided block of "Then"
+   effects, so a rulebook reads as a scannable list of if/then cards. */
+.editor-rule {
+  display: flex;
   flex-direction: column;
-  align-items: stretch;
-  padding: var(--gap-sm);
-  border: 1px solid var(--border-color);
+  gap: var(--gap-sm);
+  background: var(--field-bg);
+  border: var(--border);
   border-radius: var(--card-radius);
+  padding: var(--gap-sm);
+  transition: border-color 0.15s;
+}
+
+.editor-rule:hover {
+  border-color: var(--accent);
+}
+
+/* The trigger row, with the remove control pinned to the far right. */
+.editor-rule-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--gap-sm);
+}
+
+.editor-rule-head > .btn-danger {
+  margin-left: auto;
+}
+
+/* The effects half, set off from the trigger by a divider. */
+.editor-rule-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-sm);
+  border-top: 1px solid var(--border-color);
+  padding-top: var(--gap-sm);
+}
+
+.editor-rule-effects-head {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-sm);
+}
+
+.editor-effects {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-sm);
+}
+
+/* One effect: a type select plus the fields that type needs, on its own raised
+   row so each effect groups apart from its siblings. Remove pins right. */
+.editor-effect {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--gap-sm);
+  background: var(--surface);
+  border: var(--border);
+  border-radius: var(--card-radius);
+  padding: var(--gap-sm);
+}
+
+.editor-effect > .btn-danger {
+  margin-left: auto;
+}
+
+/* "When" / "Then" pills that label and colour-code the two halves of a rule. */
+.rule-badge {
+  align-self: flex-end;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: var(--accent-soft);
+  padding: 0.35rem 0.55rem;
+  border-radius: 999px;
+}
+
+.rule-badge-then {
+  align-self: center;
+  color: var(--accent-2);
+  background: var(--accent-2-soft);
 }
 
 .editor-subsection {
