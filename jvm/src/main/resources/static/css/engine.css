@@ -216,9 +216,11 @@
   gap: 0.3rem;
 }
 
+.stack-inspect,
 .stack-flip,
 .stack-shuffle,
-.stack-handle {
+.stack-handle,
+.inspect-close {
   width: var(--stack-control-size);
   height: var(--stack-control-size);
   display: flex;
@@ -235,8 +237,10 @@
   user-select: none;
 }
 
+.stack-inspect,
 .stack-flip,
-.stack-shuffle {
+.stack-shuffle,
+.inspect-close {
   cursor: pointer;
 }
 
@@ -248,9 +252,11 @@
   cursor: grabbing;
 }
 
+.stack-inspect:hover,
 .stack-flip:hover,
 .stack-shuffle:hover,
-.stack-handle:hover {
+.stack-handle:hover,
+.inspect-close:hover {
   color: var(--accent);
   border-color: var(--accent);
 }
@@ -266,4 +272,61 @@
 
 .stack.shuffling {
   animation: shuffle-shake 0.45s ease-in-out;
+}
+
+/* ── Inspect overlay ─────────────────────────────────────────────────────────
+   A modal over the whole viewport showing every card in a pile. The backdrop
+   dims the table and catches dismiss clicks; the panel holds a wrapping grid of
+   the cards, scrolling when the pile is large. */
+.inspect-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  background: rgba(5, 5, 10, 0.7);
+}
+
+.inspect-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  max-width: min(90vw, 1000px);
+  max-height: 85vh;
+  padding: 1.25rem;
+  background: var(--surface);
+  border: var(--border);
+  border-radius: var(--radius);
+}
+
+.inspect-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.inspect-title {
+  font-weight: 600;
+}
+
+.inspect-grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 0.6rem;
+  overflow-y: auto;
+}
+
+/* The grid cards reuse .card / .card-front; only the cursor and hover lift differ
+   — they're clicked to pull, not dragged. */
+.inspect-card {
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+.inspect-card:hover {
+  border-color: var(--accent);
 }

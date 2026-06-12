@@ -61,6 +61,11 @@ object GameView:
     // Which stack is mid-shuffle: drives the shake animation, cleared on a timer.
     val shuffling = Var(Option.empty[StackId])
 
+    // Which stack (if any) is open in the inspect overlay: a full view of every
+    // card in the pile, with click-to-pull. Cleared when dismissed or once the
+    // inspected stack empties out from under it.
+    val inspecting = Var(Option.empty[StackId])
+
     // Camera over the free-form table: a pan offset (screen px) and a zoom, so a
     // crowded board can be scrolled and scaled. The stacks live inside `world`,
     // which carries the matching transform; the board itself is the fixed viewport.
@@ -201,6 +206,7 @@ object GameView:
       div(
         cls := "stack-side",
         if multi then flipButton(stack) else emptyNode,
+        if multi then inspectButton(stack) else emptyNode,
         if canShuffle then shuffleButton(stack) else emptyNode,
         moveHandle(stack),
       )
@@ -213,6 +219,14 @@ object GameView:
         onClick --> { _ =>
           if !animating then state.update(s => Engine.flipStack(s, stack.id).getOrElse(s))
         },
+      )
+
+    def inspectButton(stack: Stack): Element =
+      button(
+        cls   := "stack-inspect",
+        title := "Inspect every card in this stack",
+        "🔍", // 🔍 magnifying lens
+        onClick --> (_ => if !animating then inspecting.set(Some(stack.id))),
       )
 
     def shuffleButton(stack: Stack): Element =
@@ -460,6 +474,53 @@ object GameView:
       if stack.cards.isEmpty then div(cls := "card card-empty", "—")
       else div(cls := "zone-row", stack.cards.reverse.map(renderCard(stack, _, Nil, emptyNode)))
 
+    // ── inspect overlay ──────────────────────────────────────────────────────
+    // A full view of every card in a pile, opened from the lens control. Cards
+    // show their front so the pile can be read regardless of facing; clicking one
+    // pulls it out onto the board as a loose stack.
+
+    // Pull a card out of the inspected stack into a fresh loose stack, cascaded
+    // just clear of the source's right edge so successive pulls fan out instead of
+    // landing on one spot. The overlay stays open (the grid re-renders a card shorter).
+    def pullCard(stack: Stack, card: CardInstance): Unit =
+      if !animating then
+        looseSeq += 1
+        val step  = (looseSeq % 6) * cascadeStep
+        val to    = Position(clamp(stack.position.x + cardWidth + cascadeStep + step), clamp(stack.position.y + step))
+        val newId = StackId(s"loose#$looseSeq")
+        state.update(s => Engine.extractCard(s, card.id, newId, to).getOrElse(s))
+
+    // One card in the inspect grid: its front, always readable, click to pull.
+    def inspectCardView(stack: Stack, card: CardInstance): Element =
+      val d = catalog.get(card.defId)
+      div(
+        cls       := Seq("card", "card-front", "inspect-card"),
+        styleAttr := d.map(c => s"border-top:4px solid ${c.color}").getOrElse(""),
+        title     := "Click to pull this card out of the stack",
+        div(cls := "card-title", d.map(_.title).getOrElse(card.defId.value)),
+        div(cls := "card-desc", d.map(_.description).getOrElse("")),
+        onClick --> (_ => pullCard(stack, card)),
+      )
+
+    // The dismissable overlay for one stack. The backdrop closes on a click or
+    // Escape; clicks inside the panel are swallowed so only the backdrop dismisses.
+    def inspectOverlay(stack: Stack): Element =
+      div(
+        cls := "inspect-backdrop",
+        onClick --> (_ => inspecting.set(None)),
+        documentEvents(_.onKeyDown).filter(_.key == "Escape") --> (_ => inspecting.set(None)),
+        div(
+          cls := "inspect-panel",
+          onClick --> (e => e.stopPropagation()),
+          div(
+            cls := "inspect-header",
+            span(cls := "inspect-title", s"${stack.label} (${stack.cards.size})".trim),
+            button(cls := "inspect-close", title := "Close", "✕", onClick --> (_ => inspecting.set(None))),
+          ),
+          div(cls := "inspect-grid", stack.cards.map(inspectCardView(stack, _))),
+        ),
+      )
+
     // Snap every authored stack back to the position it started at. Loose stacks
     // split off mid-play have no authored home, so they're left where they lie.
     def restorePositions(): Unit =
@@ -496,9 +557,24 @@ object GameView:
         ),
       ),
       div(cls := "game", board),
+      // The inspect overlay, when a lens is open. Driven by both the open stack and
+      // the live table so the grid tracks pulls, and so it closes itself if the
+      // stack empties out (a non-persistent pile ceasing to exist).
+      child <-- inspecting.signal
+        .combineWith(state.signal)
+        .distinct
+        .map: (open, s) =>
+          open.flatMap(id => s.stacks.find(_.id == id)) match
+            case Some(stack) if stack.cards.nonEmpty => inspectOverlay(stack)
+            case _                                   => emptyNode,
     )
 
   private def clamp(n: Int): Int = math.max(0, n)
+
+  // The on-table card width (px), mirroring --card-w in engine.css; used to fan
+  // pulled cards out just clear of their source stack.
+  private val cardWidth   = 130
+  private val cascadeStep = 26
 
   // Wheel zoom: multiplicative step per notch, bounded so the table can't vanish.
   private val zoomStep = 1.1
