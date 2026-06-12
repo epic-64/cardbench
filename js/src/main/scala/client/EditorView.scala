@@ -43,7 +43,7 @@ object EditorView:
         textField("Id", c.id.value, v => updateCard(i)(_.copy(id = CardDefId(v)))),
         textField("Title", c.title, v => updateCard(i)(_.copy(title = v))),
         colorField("Color", c.color, v => updateCard(i)(_.copy(color = v))),
-        textField("Description", c.description, v => updateCard(i)(_.copy(description = v))),
+        textAreaField("Description", c.description, v => updateCard(i)(_.copy(description = v))),
         removeButton(() => setCards(cs => cs.patch(i, Nil, 1))),
       )
 
