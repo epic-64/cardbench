@@ -27,6 +27,7 @@ object FineTuneView:
     val gridSize = Var(20)
     val snap     = Var(true)
     var drag     = Option.empty[Drag]
+    val catalog  = initial.catalog.cards.map(c => c.id -> c).toMap
 
     def setPosition(id: StackId, pos: Position): Unit =
       draft.update: d =>
@@ -54,19 +55,55 @@ object FineTuneView:
       val r = canvas.ref.getBoundingClientRect()
       (clientX - r.left, clientY - r.top)
 
+    // A stack drawn with the play board's own markup, so its footprint here is
+    // exactly what it will occupy in play: a pile shows one card (layered when it
+    // holds more), a row spreads every card side by side. The whole stack is the
+    // drag handle; a corner badge reads out its live position.
     def stackBox(spec: StackSpec): Element =
-      val cards = spec.contents.map(_.count).sum
       div(
-        cls       := "tune-stack",
+        cls := "stack tune-draggable",
+        cls("stack-row") := (spec.layout == Layout.Row),
         styleAttr := s"left:${spec.position.x}px;top:${spec.position.y}px",
-        div(cls := "tune-stack-label", if spec.label.nonEmpty then spec.label else spec.id.value),
-        div(cls := "tune-stack-meta", s"$cards cards · ${spec.layout.toString.toLowerCase}"),
-        div(cls := "tune-stack-pos", s"${spec.position.x}, ${spec.position.y}"),
+        stackLabel(spec),
+        stackBody(spec),
+        div(cls := "tune-pos", s"${spec.position.x}, ${spec.position.y}"),
         onPointerDown --> (e => startDrag(e)),
         onPointerMove --> (e => moveDrag(e)),
         onPointerUp --> (e => endDrag(e, spec.id)),
         onPointerCancel --> (_ => drag = None),
       )
+
+    def stackLabel(spec: StackSpec): Node =
+      val n = cardCount(spec)
+      if n > 1 then div(cls := "stack-label", s"${spec.label} ($n)".trim)
+      else if spec.label.nonEmpty then div(cls := "stack-label", spec.label)
+      else emptyNode
+
+    def stackBody(spec: StackSpec): Element =
+      val cards = expand(spec)
+      spec.layout match
+        case Layout.Pile =>
+          cards.headOption match
+            case None      => div(cls := "card card-empty", "—")
+            case Some(top) => cardFace(top, spec.facing, stacked = cards.size > 1)
+        case Layout.Row =>
+          if cards.isEmpty then div(cls := "card card-empty", "—")
+          else div(cls := "zone-row", cards.map(cardFace(_, spec.facing, stacked = false)))
+
+    // A face, dimensionally identical to a real card: a back when face-down, else
+    // a colour-topped front with its title, so stacks stay tellable apart.
+    def cardFace(defId: CardDefId, facing: Facing, stacked: Boolean): Element =
+      val depth = if stacked then Seq("card-stacked") else Nil
+      facing match
+        case Facing.Down =>
+          div(cls := (Seq("card", "card-back") ++ depth))
+        case Facing.Up =>
+          val d = catalog.get(defId)
+          div(
+            cls       := (Seq("card", "card-front") ++ depth),
+            styleAttr := d.map(c => s"border-top:4px solid ${c.color}").getOrElse(""),
+            div(cls := "card-title", d.map(_.title).getOrElse(defId.value)),
+          )
 
     def startDrag(e: dom.PointerEvent): Unit =
       e.preventDefault()
@@ -84,7 +121,7 @@ object FineTuneView:
         d.el.style.left = s"${x}px"
         d.el.style.top = s"${y}px"
         // Keep the readout honest while the stack is still in flight.
-        Option(d.el.querySelector(".tune-stack-pos")).foreach(_.textContent = s"$x, $y")
+        Option(d.el.querySelector(".tune-pos")).foreach(_.textContent = s"$x, $y")
 
     def endDrag(e: dom.PointerEvent, id: StackId): Unit =
       drag.foreach: d =>
@@ -127,9 +164,32 @@ object FineTuneView:
       span(cls := "field-label", "Snap"),
     )
 
-  // The drag surface stretches to hold the furthest stack, with a screenful of
-  // slack beyond so a stack can be pulled out past the current edge.
+  // The drag surface stretches to hold each stack's far edge — position plus its
+  // real footprint — with a screenful of slack beyond so a stack can be pulled
+  // out past the current edge.
   private def canvasExtent(d: GameDefinition): (Int, Int) =
-    val xs = d.setup.stacks.map(_.position.x)
-    val ys = d.setup.stacks.map(_.position.y)
-    (math.max(1200, (if xs.isEmpty then 0 else xs.max) + 360), math.max(700, (if ys.isEmpty then 0 else ys.max) + 360))
+    val edges = d.setup.stacks.map: s =>
+      val (w, h) = footprint(s)
+      (s.position.x + w, s.position.y + h)
+    val right  = if edges.isEmpty then 0 else edges.map(_._1).max
+    val bottom = if edges.isEmpty then 0 else edges.map(_._2).max
+    (math.max(1200, right + 200), math.max(700, bottom + 200))
+
+  // A stack's pixel footprint, mirroring the play board: card dimensions match the
+  // --card-w / --card-h / row gap in engine.css, plus room for the label above.
+  private val cardW   = 130
+  private val cardH   = 180
+  private val rowGap  = 8
+  private val labelH  = 28
+  private def footprint(spec: StackSpec): (Int, Int) =
+    val n = math.max(1, cardCount(spec))
+    val w = spec.layout match
+      case Layout.Row  => n * cardW + (n - 1) * rowGap
+      case Layout.Pile => cardW + 6 // the layered-deck shadow offset
+    (w, labelH + cardH)
+
+  private def expand(spec: StackSpec): List[CardDefId] =
+    spec.contents.flatMap(s => List.fill(s.count)(s.card))
+
+  private def cardCount(spec: StackSpec): Int =
+    spec.contents.map(_.count).sum
