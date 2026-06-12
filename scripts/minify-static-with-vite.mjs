@@ -10,7 +10,7 @@ const jsEntry = path.join(distDir, "main.js");
 const skipJsMinify = process.env.SKIP_JS_MINIFY === "1";
 const cssBundleName = "app-bundle.css";
 const cssBundlePath = path.join(distDir, cssBundleName);
-const sourceCssFiles = ["base.css", "engine.css"];
+const sourceCssFiles = ["base.css", "engine.css", "library.css"];
 
 async function minifyFile(filePath, loader) {
   const source = await fs.readFile(filePath, "utf8");

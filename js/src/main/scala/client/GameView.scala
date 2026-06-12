@@ -24,8 +24,8 @@ object GameView:
   // A stack mid-move: the live DOM element plus the grab offset within it.
   private final case class StackDrag(el: dom.html.Element, grabX: Int, grabY: Int)
 
-  def view(): Element =
-    val initial = Engine.setup(SampleGame.catalog, SampleGame.rulebook, SampleGame.setup, System.currentTimeMillis())
+  def view(definition: GameDefinition): Element =
+    val initial = Engine.setup(definition.catalog, definition.rulebook, definition.setup, System.currentTimeMillis())
     val state   = Var(initial)
     val catalog = initial.catalog
 

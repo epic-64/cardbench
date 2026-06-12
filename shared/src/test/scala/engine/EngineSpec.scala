@@ -313,3 +313,7 @@ class EngineSpec extends AnyWordSpec with Matchers:
 
     "round-trip a setup with persistent stacks unchanged" in:
       read[GameSetup](write(playSetup)) shouldBe playSetup
+
+    "round-trip a whole game definition unchanged" in:
+      val definition = GameDefinition("test", "Test Game", catalog, rulebook, setup)
+      read[GameDefinition](write(definition)) shouldBe definition
