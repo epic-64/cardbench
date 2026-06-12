@@ -31,7 +31,7 @@ object AppView:
             onFineTune = d => screen.set(Screen.FineTune(d)),
           )
         case Screen.Play(d) =>
-          playScreen(d, () => screen.set(Screen.Library))
+          GameView.view(d, () => screen.set(Screen.Library))
         case Screen.Edit(d) =>
           EditorView.view(
             d,
@@ -49,16 +49,4 @@ object AppView:
             onCancel = () => screen.set(Screen.Library),
           )
       },
-    )
-
-  // The game board under a thin toolbar that gets the player back to the library.
-  private def playScreen(definition: GameDefinition, onBack: () => Unit): Element =
-    div(
-      cls := "play-screen",
-      div(
-        cls := "toolbar",
-        button(cls := "btn", "← Library", onClick --> (_ => onBack())),
-        span(cls := "toolbar-title", definition.name),
-      ),
-      GameView.view(definition),
     )
