@@ -25,13 +25,26 @@ object GameView:
   private final case class StackDrag(el: dom.html.Element, grabX: Int, grabY: Int)
 
   def view(definition: GameDefinition, onBack: () => Unit): Element =
-    val initial = Engine.setup(definition.catalog, definition.rulebook, definition.setup, System.currentTimeMillis())
+    // A fresh table from the authored data; the saved live table (if a game is in
+    // progress) only restores the stacks onto it, so the catalog and rules always
+    // come from the current definition even after an edit.
+    def freshSetup(): GameState =
+      Engine.setup(definition.catalog, definition.rulebook, definition.setup, System.currentTimeMillis())
+    val fresh   = freshSetup()
+    val initial = GameStore.loadGame(definition.id).map(stacks => fresh.copy(stacks = stacks)).getOrElse(fresh)
     val state   = Var(initial)
-    val catalog = initial.catalog
+    val catalog = fresh.catalog
 
     var dragCard: Option[CardDrag]   = None
     var dragStack: Option[StackDrag] = None
-    var looseSeq                     = 0 // supplies fresh ids for stacks split off the board
+    // Supplies fresh ids for stacks split off the board. Seeded past any loose
+    // stack already in a restored table, so a split can't reuse a live id.
+    var looseSeq = initial.stacks
+      .map(_.id.value)
+      .collect { case id if id.startsWith("loose#") => id.stripPrefix("loose#").toIntOption }
+      .flatten
+      .maxOption
+      .getOrElse(0)
     var animating                    = false // true while a play's step script is running
     // A floating, zoom-scaled card preview shown during a card drag (with the grab
     // offset in screen px), so the dragged card matches its on-table size at any
@@ -179,14 +192,27 @@ object GameView:
       else emptyNode
 
     // A vertical control column hugging the stack's bottom-right: the drag-to-move
-    // handle on every stack, with a shuffle button above it only where shuffling
-    // makes sense — a pile of more than one card.
+    // handle on every stack, with a flip-all and shuffle button above it where they
+    // make sense — flipping needs more than one card (a lone card flips on click),
+    // shuffling additionally needs a pile.
     def sideControls(stack: Stack): Element =
-      val canShuffle = stack.layout == Layout.Pile && stack.cards.size > 1
+      val multi      = stack.cards.size > 1
+      val canShuffle = stack.layout == Layout.Pile && multi
       div(
         cls := "stack-side",
+        if multi then flipButton(stack) else emptyNode,
         if canShuffle then shuffleButton(stack) else emptyNode,
         moveHandle(stack),
+      )
+
+    def flipButton(stack: Stack): Element =
+      button(
+        cls   := "stack-flip",
+        title := "Flip every card in this stack",
+        "👁", // 👁 eye
+        onClick --> { _ =>
+          if !animating then state.update(s => Engine.flipStack(s, stack.id).getOrElse(s))
+        },
       )
 
     def shuffleButton(stack: Stack): Element =
@@ -440,8 +466,18 @@ object GameView:
       if !animating then
         state.update(s => definition.setup.stacks.foldLeft(s)((acc, sp) => Engine.moveStack(acc, sp.id, sp.position).getOrElse(acc)))
 
+    // Throw away the in-progress table and re-deal from the authored setup. The
+    // save observer below rewrites storage from the fresh state, so a restarted
+    // game is itself the new ongoing game.
+    def restartGame(): Unit =
+      if !animating && dom.window.confirm("Restart this game from a fresh setup? Your current progress will be lost.") then
+        state.set(freshSetup())
+
     div(
       cls := "play-screen",
+      // Mirror every settled table into storage so a reload resumes mid-game. The
+      // catalog and rules don't change in play, so only the stacks are saved.
+      state.signal.map(_.stacks).distinct --> (stacks => GameStore.saveGame(definition.id, stacks)),
       div(
         cls := "toolbar",
         button(cls := "btn", "← Library", onClick --> (_ => onBack())),
@@ -451,6 +487,12 @@ object GameView:
           title := "Move every stack back to its starting position",
           "⟲ Restore positions",
           onClick --> (_ => restorePositions()),
+        ),
+        button(
+          cls   := "btn",
+          title := "Discard this game and deal a fresh setup",
+          "↻ Restart game",
+          onClick --> (_ => restartGame()),
         ),
       ),
       div(cls := "game", board),

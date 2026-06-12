@@ -216,6 +216,7 @@
   gap: 0.3rem;
 }
 
+.stack-flip,
 .stack-shuffle,
 .stack-handle {
   width: var(--stack-control-size);
@@ -234,6 +235,7 @@
   user-select: none;
 }
 
+.stack-flip,
 .stack-shuffle {
   cursor: pointer;
 }
@@ -246,6 +248,7 @@
   cursor: grabbing;
 }
 
+.stack-flip:hover,
 .stack-shuffle:hover,
 .stack-handle:hover {
   color: var(--accent);

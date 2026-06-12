@@ -104,6 +104,13 @@ object Engine:
         else s
       state.copy(stacks = stacks)
 
+  /** Flip every card in a stack between Up and Down at once; the pile order is
+    * untouched. Like the single-card flip, this clears the freshly-shuffled hint.
+    */
+  def flipStack(state: GameState, stack: StackId): Either[EngineError, GameState] =
+    find(state, stack).map: s =>
+      replaceStack(state, s.copy(cards = s.cards.map(c => c.copy(facing = toggle(c.facing))), shuffled = false))
+
   /** Reposition a whole stack on the board; its cards are untouched. */
   def moveStack(state: GameState, stack: StackId, to: Position): Either[EngineError, GameState] =
     find(state, stack).map(s => replaceStack(state, s.copy(position = to)))

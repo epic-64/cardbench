@@ -110,7 +110,7 @@ case class CardDef(
 ) derives ReadWriter
 
 /** A physical card on the table: one instance of a definition. */
-case class CardInstance(id: CardId, defId: CardDefId, facing: Facing)
+case class CardInstance(id: CardId, defId: CardDefId, facing: Facing) derives ReadWriter
 
 /** A free-form table coordinate in board pixels. */
 case class Position(x: Int, y: Int) derives ReadWriter
@@ -152,7 +152,7 @@ case class Stack(
   shuffled: Boolean = false,
   persistent: Boolean = false,
   layout: Layout = Layout.Pile,
-)
+) derives ReadWriter
 
 /** The whole table: the single source of truth. `catalog` is the registry of
   * card kinds for rendering; `rules` is the effect system — the reactions the
