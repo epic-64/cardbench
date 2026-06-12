@@ -4,6 +4,8 @@
   --card-w: 130px;
   --card-h: 180px;
   --card-radius: 8px;
+  --stack-control-size: 1.6rem; /* the square side-control buttons (shuffle, move) */
+  --stack-control-inset: 0.3rem; /* their offset from the card's bottom-right corner */
 }
 
 /* The board fills whatever the play screen gives it: the play screen is a flex
@@ -193,12 +195,20 @@
   border-color: var(--accent);
 }
 
-/* Control column hugging the stack's bottom-right: shuffle above, move handle
-   below. */
+/* Holds the card(s) and pins the side controls relative to them, so the controls
+   ignore the buttons row below and (for a horizontal stack, which is wider than
+   one card) stay over the leftmost card rather than the rightmost. */
+.stack-body {
+  position: relative;
+}
+
+/* Control column hugging the leftmost card's bottom-right: shuffle above, move
+   handle below. Anchored by `left` (one card in from the body's edge) so it lands
+   on the first card whether the body holds one card or a horizontal row of them. */
 .stack-side {
   position: absolute;
-  right: 0.3rem;
-  bottom: 0.3rem;
+  left: calc(var(--card-w) - var(--stack-control-size) - var(--stack-control-inset));
+  bottom: var(--stack-control-inset);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -207,8 +217,8 @@
 
 .stack-shuffle,
 .stack-handle {
-  width: 1.6rem;
-  height: 1.6rem;
+  width: var(--stack-control-size);
+  height: var(--stack-control-size);
   display: flex;
   align-items: center;
   justify-content: center;
