@@ -67,10 +67,9 @@ object GameView:
       val body = stack.layout match
         case Layout.Pile => topView(stack)
         case Layout.Row  => rowView(stack)
-      // Controls (shuffle + move handle) only make sense for a multi-card pile; a
-      // single-card stack you nudge by its lone card, and a row zone stays put.
-      val controls =
-        if stack.layout == Layout.Pile && stack.cards.size > 1 then sideControls(stack) else emptyNode
+      // Every stack gets a drag-to-move handle — even empty, single-card, or row
+      // zones; the shuffle button rides along only where it makes sense.
+      val controls = sideControls(stack)
       div(
         cls       := "stack",
         cls("stack-play") := (stack.id == SampleGame.playZone),
@@ -92,25 +91,30 @@ object GameView:
       else if stack.label.nonEmpty then div(cls := "stack-label", stack.label)
       else emptyNode
 
-    // A vertical control column hugging the stack's bottom-right: a small
-    // shuffle button above the drag-to-move handle.
+    // A vertical control column hugging the stack's bottom-right: the drag-to-move
+    // handle on every stack, with a shuffle button above it only where shuffling
+    // makes sense — a pile of more than one card.
     def sideControls(stack: Stack): Element =
+      val canShuffle = stack.layout == Layout.Pile && stack.cards.size > 1
       div(
         cls := "stack-side",
-        button(
-          cls   := "stack-shuffle",
-          title := "Shuffle this stack",
-          "⇄",
-          onClick --> { _ =>
-            // Mark the stack first so the re-rendered element mounts with the
-            // animation class already on; a timer clears it once the shake ends.
-            if !animating then
-              shuffling.set(Some(stack.id))
-              dom.window.setTimeout(() => shuffling.set(None), shuffleAnimMs)
-              state.update(s => Engine.shuffle(s, stack.id, System.currentTimeMillis()).getOrElse(s))
-          },
-        ),
+        if canShuffle then shuffleButton(stack) else emptyNode,
         moveHandle(stack),
+      )
+
+    def shuffleButton(stack: Stack): Element =
+      button(
+        cls   := "stack-shuffle",
+        title := "Shuffle this stack",
+        "⇄",
+        onClick --> { _ =>
+          // Mark the stack first so the re-rendered element mounts with the
+          // animation class already on; a timer clears it once the shake ends.
+          if !animating then
+            shuffling.set(Some(stack.id))
+            dom.window.setTimeout(() => shuffling.set(None), shuffleAnimMs)
+            state.update(s => Engine.shuffle(s, stack.id, System.currentTimeMillis()).getOrElse(s))
+        },
       )
 
     // ── animated play ──────────────────────────────────────────────────────
