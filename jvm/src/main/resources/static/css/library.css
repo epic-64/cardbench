@@ -338,45 +338,33 @@
   text-align: center;
 }
 
-/* A draggable proxy for a stack — card-width so the arrangement reads at roughly
-   the same footprint it will have on the play board. */
-.tune-stack {
-  position: absolute;
-  width: var(--card-w);
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-  padding: 0.5rem 0.6rem;
-  background: var(--surface);
-  border: var(--border);
-  border-radius: var(--card-radius);
+/* Stacks render with the play board's own .stack / .card markup for an accurate
+   footprint; this only adds the drag affordance and lift. */
+.tune-draggable {
   cursor: grab;
-  user-select: none;
 }
 
-.tune-stack:active {
+.tune-draggable:active {
   cursor: grabbing;
 }
 
-/* Lifted and outlined while in flight, so it reads clearly above the grid. */
+/* Floated above its neighbours while in flight so it reads clearly over them. */
 .tune-dragging {
   z-index: 10;
-  border-color: var(--accent);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
 }
 
-.tune-stack-label {
-  font-weight: 600;
-  font-size: 0.9rem;
-}
-
-.tune-stack-meta {
-  color: var(--muted);
-  font-size: 0.72rem;
-}
-
-.tune-stack-pos {
-  color: var(--accent);
-  font-size: 0.72rem;
+/* A live coordinate badge pinned to the stack's top-left corner. */
+.tune-pos {
+  position: absolute;
+  top: 0;
+  left: 0;
+  font-size: 0.68rem;
   font-variant-numeric: tabular-nums;
+  color: var(--accent);
+  background: rgba(10, 10, 15, 0.75);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 0 0.3rem;
+  pointer-events: none;
+  z-index: 2;
 }
