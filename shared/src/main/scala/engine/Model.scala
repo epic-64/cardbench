@@ -72,29 +72,35 @@ object TargetFacing:
     },
   )
 
-/** A consequence of playing a card — a single move event. The vocabulary is one
+/** What a rule does when it fires — a single move. The vocabulary is one
   * primitive: `Deal` moves `count` cards (default 1) from the top of one stack
   * onto the top of another, forcing each dealt card into `targetFacing` (`Keep`
   * leaves it as it lies; `Up`/`Down` flip it only when it isn't already there).
-  * Everything richer composes from more of these, including where a *played* card
-  * ends up: since playing first drops the card on the play stack, sending it
-  * onward (e.g. to a discard) is just a `Deal` out of that stack.
+  * Each move is itself an `Event`, so an effect can cascade into further rules;
+  * everything richer composes from more of these.
   */
 enum Effect derives ReadWriter:
   case Deal(from: StackId, to: StackId, count: Int = 1, targetFacing: TargetFacing = TargetFacing.Keep)
 
-/** One atomic, animatable move in a play's resolution: relocate a single card,
-  * or flip one. `Engine.playSteps` emits these in order so the shell can animate
-  * them one by one; `Engine.play` simply applies them all at once.
+/** One atomic, animatable change in a cascade: relocate a single card, or flip
+  * one. `Engine.dropSteps` emits these in order so the shell can animate them one
+  * by one; `Engine.drop` simply applies them all at once.
   */
 enum Step:
   case Move(card: CardId, to: StackId)
   case Flip(card: CardId)
 
+/** Something that just happened on the table — the signal the effect system
+  * reacts to. The only kind so far: a card came to rest on a stack. A rule whose
+  * `Trigger` matches the event fires its effects in response (see
+  * `Engine.dropSteps`).
+  */
+enum Event:
+  case Moved(card: CardId, defId: CardDefId, to: StackId)
+
 /** Authored content — the "front" of a card. Pure presentation: what a card
-  * looks like and reads as. A card's *behaviour* when played lives entirely
-  * apart, in the `Rulebook` (see `CardRule`), so look and rules evolve
-  * independently.
+  * looks like and reads as. A card's *behaviour* lives entirely apart, in the
+  * `Rulebook` (see `Rule`), so look and rules evolve independently.
   */
 case class CardDef(
   id: CardDefId,
@@ -149,12 +155,13 @@ case class Stack(
 )
 
 /** The whole table: the single source of truth. `catalog` is the registry of
-  * card kinds for rendering; `rules` is the resolved effect system, addressing
-  * each kind's play behaviour by id. A kind absent from `rules` is inert.
+  * card kinds for rendering; `rules` is the effect system — the reactions the
+  * engine fires as cards move (see `Engine.dropSteps`). An event matching no rule
+  * passes without consequence.
   */
 case class GameState(
   catalog: Map[CardDefId, CardDef],
-  rules: Map[CardDefId, CardRule],
+  rules: List[Rule],
   stacks: List[Stack],
 )
 

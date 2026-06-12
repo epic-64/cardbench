@@ -2,8 +2,10 @@ package engine
 
 import engine.EngineError.*
 
-/** The entire engine API: four verbs plus deterministic setup. Each is a pure
-  * `GameState => GameState` (wrapped in `Either` for the moves that can fail).
+/** The entire engine API: deterministic setup, a handful of mechanical verbs
+  * (shuffle, deal, move, flip, moveStack, extractCard), and `drop` — the one
+  * verb that runs the effect system, letting rules react as cards move. Each is a
+  * pure `GameState => GameState` (wrapped in `Either` for the ones that can fail).
   */
 object Engine:
 
@@ -12,8 +14,7 @@ object Engine:
     * reproduces the same table. Unflagged stacks keep their authored order.
     */
   def setup(catalog: CardCatalog, rulebook: Rulebook, gameSetup: GameSetup, seed: Long = 0L): GameState =
-    val defs  = catalog.cards.map(c => c.id -> c).toMap
-    val rules = rulebook.rules.map(r => r.card -> r).toMap
+    val defs = catalog.cards.map(c => c.id -> c).toMap
     val stacks = gameSetup.stacks.map: spec =>
       val instances = spec.contents
         .flatMap(spawn => List.fill(spawn.count)(spawn.card))
@@ -33,7 +34,7 @@ object Engine:
         persistent = spec.persistent,
         layout = spec.layout,
       )
-    GameState(defs, rules, stacks)
+    GameState(defs, rulebook.rules, stacks)
 
   /** Reorder one stack using a seeded RNG. Same seed ⇒ same order. Marks the
     * stack `shuffled` until something touches its cards again.
@@ -66,34 +67,23 @@ object Engine:
       val placed = without.map(s => if s.id == to then s.copy(cards = instance :: s.cards, shuffled = false) else s)
       state.copy(stacks = dropEmpty(placed))
 
-  /** Play a card into `into` (the play zone): move it there, then resolve its
-    * rule's effects in order. Applies the whole script at once; see `playSteps`
-    * for the step-by-step form the animated shell uses.
+  /** Move a card onto a stack and let the table react: relocate it, then run the
+    * effects of every rule the move triggers — and, since each effect is itself a
+    * move, the rules *those* in turn trigger, cascading until nothing more fires.
+    * Applies the whole cascade at once; see `dropSteps` for the step-by-step form
+    * the animated shell uses.
     */
-  def play(state: GameState, card: CardId, into: StackId): Either[EngineError, GameState] =
-    playSteps(state, card, into).map(applySteps(state, _))
+  def drop(state: GameState, card: CardId, onto: StackId): Either[EngineError, GameState] =
+    dropSteps(state, card, onto).map(applySteps(state, _))
 
-  /** The script a play would run: the card moving into `into` (the play zone),
-    * then one ordered `Step` per atomic move or flip its effects produce. Where
-    * the played card finally lands is itself an effect — a `Deal` out of the play
-    * zone — so a card whose rule has none simply stays in `into`. Threaded through
-    * `Either`, so any failure (e.g. an effect dealing from an empty stack) aborts
-    * before a single step is returned — playing is all-or-nothing.
+  /** The script a drop runs: the card relocating onto `onto`, then one ordered
+    * `Step` per atomic move or flip the reactions produce, cascading through the
+    * rules each move in turn triggers. Threaded through `Either`, so any failure
+    * (e.g. an effect dealing from an empty stack) aborts before a single step is
+    * returned — a drop is all-or-nothing.
     */
-  def playSteps(state: GameState, card: CardId, into: StackId): Either[EngineError, List[Step]] =
-    for
-      instance <- findCard(state, card).toRight(UnknownCard(card))
-      _        <- state.catalog.get(instance.defId).toRight(UnknownCardDef(instance.defId))
-      // Playing is, at bottom, a move onto the play stack; effects resolve on top.
-      played <- move(state, card, into)
-      // Behaviour comes from the rulebook, not the catalog: an unlisted kind is inert.
-      effects = state.rules.get(instance.defId).map(_.effects).getOrElse(Nil)
-      start   = (played, List(Step.Move(card, into)))
-      resolved <- effects.foldLeft[Either[EngineError, (GameState, List[Step])]](Right(start)):
-                    (acc, effect) =>
-                      acc.flatMap:
-                        case (s, steps) => dealSteps(s, effect).map((s2, more) => (s2, steps ++ more))
-    yield resolved._2
+  def dropSteps(state: GameState, card: CardId, onto: StackId): Either[EngineError, List[Step]] =
+    resolveMove(state, card, onto, TargetFacing.Keep).map(_._2)
 
   /** Flip a single card between Up and Down; nothing else changes. */
   def flip(state: GameState, card: CardId): Either[EngineError, GameState] =
@@ -124,28 +114,54 @@ object Engine:
       val created = Stack(newStack, "", to, List(instance))
       state.copy(stacks = dropEmpty(without :+ created))
 
-  // ── helpers ────────────────────────────────────────────────────────────────
+  // ── the effect system ────────────────────────────────────────────────────
+  // The whole cascade hangs off one mutually-recursive function. `resolveMove`
+  // relocates a card and runs the rules that fires; each of those rules' effects
+  // is more relocations, run by `runDeal`, which calls `resolveMove` again — so
+  // reactions chain naturally until a move triggers nothing. All-or-nothing via
+  // `Either`: the first failure aborts before any step escapes.
 
-  /** The steps one effect contributes, plus the state after running them (so the
-    * next effect sees updated stack tops). `Deal` is `count` single deals; each
-    * emits a `Move`, and a `Flip` too when `targetFacing` forces a card that
-    * isn't already that way.
+  /** Relocate `card` onto `to` (forcing `facing` unless it is `Keep`), emit the
+    * resulting "moved onto `to`" event, and run the effects of every rule that
+    * fires on it. Returns the settled state and the ordered steps it produced.
     */
-  private def dealSteps(state: GameState, effect: Effect): Either[EngineError, (GameState, List[Step])] =
+  private def resolveMove(
+    state: GameState,
+    card: CardId,
+    to: StackId,
+    facing: TargetFacing,
+  ): Either[EngineError, (GameState, List[Step])] =
+    for
+      instance <- findCard(state, card).toRight(UnknownCard(card))
+      moved    <- move(state, card, to)
+      flips     = facing.facing.filter(_ != instance.facing).map(_ => Step.Flip(card)).toList
+      flipped   = flips.foldLeft(moved)((s, _) => flip(s, card).getOrElse(s))
+      event     = Event.Moved(card, instance.defId, to)
+      effects   = state.rules.filter(_.trigger.fires(event)).flatMap(_.effects)
+      reacted  <- runEffects(flipped, effects)
+    yield (reacted._1, (Step.Move(card, to) :: flips) ++ reacted._2)
+
+  /** Run a list of effects in order, threading state and accumulating steps. */
+  private def runEffects(state: GameState, effects: List[Effect]): Either[EngineError, (GameState, List[Step])] =
+    effects.foldLeft[Either[EngineError, (GameState, List[Step])]](Right((state, Nil))):
+      (acc, effect) =>
+        acc.flatMap:
+          case (s, steps) => runDeal(s, effect).map((s2, more) => (s2, steps ++ more))
+
+  /** A `Deal` as `count` single relocations, each resolved (and so itself able to
+    * set off further reactions) by `resolveMove`. */
+  private def runDeal(state: GameState, effect: Effect): Either[EngineError, (GameState, List[Step])] =
     effect match
-      case Effect.Deal(from, to, count, targetFacing) =>
+      case Effect.Deal(from, to, count, facing) =>
         List.fill(count)(()).foldLeft[Either[EngineError, (GameState, List[Step])]](Right((state, Nil))):
           (acc, _) =>
             acc.flatMap:
               case (s, steps) =>
                 for
-                  src   <- find(s, from)
-                  top   <- src.cards.headOption.toRight(EmptyStack(from))
-                  dealt <- deal(s, from, to)
-                yield
-                  val flips = targetFacing.facing.filter(_ != top.facing).map(_ => Step.Flip(top.id)).toList
-                  val next  = flips.foldLeft(dealt)((st, _) => flip(st, top.id).getOrElse(st))
-                  (next, steps ++ (Step.Move(top.id, to) :: flips))
+                  src <- find(s, from)
+                  top <- src.cards.headOption.toRight(EmptyStack(from))
+                  res <- resolveMove(s, top.id, to, facing)
+                yield (res._1, steps ++ res._2)
 
   /** Run a script straight through, ignoring per-step errors the script's own
     * construction already ruled out. */

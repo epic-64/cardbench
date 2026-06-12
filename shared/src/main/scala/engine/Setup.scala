@@ -46,20 +46,25 @@ case class GameSetup(stacks: List[StackSpec]) derives ReadWriter
 /** What cards exist, for rendering. */
 case class CardCatalog(cards: List[CardDef]) derives ReadWriter
 
-/** A single card kind's play behaviour, addressed by its def id: the `effects`
-  * that resolve, in order, when the card is played (see `Engine.play`). Where the
-  * spent card itself lands is just one of those effects — a `Deal` out of the
-  * play stack — so there is no separate destination field. Held apart from the
-  * `CardDef` on purpose: the catalog says what a card *is*, a rule says what it
-  * *does*.
+/** What an `Event` must match for a rule to fire. The only kind so far: a card
+  * of def `card` coming to rest on stack `to`.
   */
-case class CardRule(
-  card: CardDefId,
-  effects: List[Effect] = Nil,
-) derives ReadWriter
+enum Trigger derives ReadWriter:
+  case Moved(card: CardDefId, to: StackId)
 
-/** The effect system as authored data: every card kind that does something when
-  * played. Kinds with no rule here are inert. Kept wholly separate from the
-  * `CardCatalog` so presentation and behaviour can be authored independently.
+  /** Whether this trigger fires on `event`. */
+  def fires(event: Event): Boolean = (this, event) match
+    case (Trigger.Moved(card, to), Event.Moved(_, defId, dest)) => card == defId && to == dest
+
+/** A reaction in the effect system: when an event matches `trigger`, run its
+  * `effects` in order. Held wholly apart from the `CardCatalog` so a card's
+  * presentation and its behaviour are authored independently — the catalog says
+  * what a card *is*, a rule says what the table *does* in response to it.
   */
-case class Rulebook(rules: List[CardRule]) derives ReadWriter
+case class Rule(trigger: Trigger, effects: List[Effect] = Nil) derives ReadWriter
+
+/** The effect system as authored data: every reaction on the table. An event
+  * matching no rule passes without consequence. Kept separate from the
+  * `CardCatalog` so presentation and behaviour evolve independently.
+  */
+case class Rulebook(rules: List[Rule]) derives ReadWriter

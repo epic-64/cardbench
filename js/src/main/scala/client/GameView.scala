@@ -72,7 +72,6 @@ object GameView:
       val controls = sideControls(stack)
       div(
         cls       := "stack",
-        cls("stack-play") := (stack.id == SampleGame.playZone),
         cls("stack-row") := (stack.layout == Layout.Row),
         cls("shuffling") <-- shuffling.signal.map(_.contains(stack.id)).distinct,
         styleAttr := s"left:${stack.position.x}px;top:${stack.position.y}px",
@@ -117,8 +116,8 @@ object GameView:
         },
       )
 
-    // ── animated play ──────────────────────────────────────────────────────
-    // A play resolves as a script of atomic steps (Engine.playSteps); we run it
+    // ── animated drops ─────────────────────────────────────────────────────
+    // A drop resolves as a script of atomic steps (Engine.dropSteps); we run it
     // one step at a time so each move/flip can animate, and ignore drops while a
     // script is in flight (see `animating`).
 
@@ -163,32 +162,28 @@ object GameView:
       animating = true
       loop(steps)
 
-    // Build the play's script: the card sliding into the play zone, then its
-    // effects resolving on top (one of which may move it on to its post-play
-    // home). A play with nothing to do (Left) is simply dropped.
-    def playAnimated(card: CardId): Unit =
-      Engine.playSteps(state.now(), card, SampleGame.playZone).foreach(runScript)
+    // Drop a card onto a stack: relocate it and play out whatever reactions the
+    // rules fire, as an animated step script. The card just merging on top with no
+    // rule to react is simply the one-step case. A drop that resolves to nothing
+    // (Left) is ignored.
+    def dropAnimated(card: CardId, onto: StackId): Unit =
+      Engine.dropSteps(state.now(), card, onto).foreach(runScript)
 
-    // A card dropped onto a *different* stack merges on top. Dropped onto its own
-    // single-card stack it just repositions — so a lone card can be nudged
-    // anywhere, not only by dragging it clear of the stack's own bounds. Dropped
-    // onto the play zone (and not already in it) it's played, animating.
+    // A card dropped onto a stack relocates onto it (and the rules react). Dropped
+    // onto its own single-card stack it just repositions instead — so a lone card
+    // can be nudged anywhere, not only by dragging it clear of the stack's bounds.
     def onStackDrop(e: dom.DragEvent, stack: Stack): Unit =
       if animating then ()
       else
         dragCard.foreach: c =>
           e.preventDefault()
           e.stopPropagation()
-          val selfLone    = stack.cards.size == 1 && stack.cards.exists(_.id == c.id)
-          val playingHere = stack.id == SampleGame.playZone && !stack.cards.exists(_.id == c.id)
-          val p           = boardPoint(e.clientX, e.clientY)
+          val selfLone = stack.cards.size == 1 && stack.cards.exists(_.id == c.id)
+          val p        = boardPoint(e.clientX, e.clientY)
           dragCard = None
-          if playingHere then playAnimated(c.id)
-          else
-            val verb: GameState => Either[EngineError, GameState] =
-              if selfLone then Engine.moveStack(_, stack.id, Position(clamp(p.x - c.offX), clamp(p.y - c.offY)))
-              else Engine.move(_, c.id, stack.id)
-            state.update(s => verb(s).getOrElse(s))
+          if selfLone then
+            state.update(s => Engine.moveStack(s, stack.id, Position(clamp(p.x - c.offX), clamp(p.y - c.offY))).getOrElse(s))
+          else dropAnimated(c.id, stack.id)
 
     // Pointer-driven, so movement is pixel-exact and starts immediately. We move
     // the live element directly during the drag (no re-render churn that would

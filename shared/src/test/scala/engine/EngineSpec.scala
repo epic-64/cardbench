@@ -15,15 +15,16 @@ class EngineSpec extends AnyWordSpec with Matchers:
     ),
   )
 
-  // The effect system, authored apart from the catalog. Build deals 2 debt into
-  // the discard and draws 1 feature into the building zone; with no move out of
-  // the play zone it simply stays where it was played. Every other kind is inert.
-  // Shared across the setups below — plays only ever fire in the dedicated play
-  // fixtures, so it is harmless elsewhere.
+  // The effect system, authored apart from the catalog. When a Build card comes
+  // to rest on the "in-play" stack it draws 1 feature into the building zone and
+  // deals 2 debt into the discard; with no move out of in-play it then stays put.
+  // Every other event is inert. Shared across the setups below — it only fires via
+  // `drop` onto in-play, which only the dedicated play fixtures do, so it is
+  // harmless elsewhere.
   private val rulebook = Rulebook(
     List(
-      CardRule(
-        CardDefId("build"),
+      Rule(
+        Trigger.Moved(CardDefId("build"), StackId("in-play")),
         effects = List(
           Effect.Deal(StackId("features"), StackId("build-zone"), 1, targetFacing = TargetFacing.Up),
           Effect.Deal(StackId("debt"), StackId("discard"), 2, targetFacing = TargetFacing.Up),
@@ -69,9 +70,9 @@ class EngineSpec extends AnyWordSpec with Matchers:
     ),
   )
 
-  // A "build" card that, when played, deals 2 debt into the discard pile and
-  // draws 1 feature into the building zone — mirroring the engine's headline
-  // example — plus a table with those source and (persistent, empty) target piles.
+  // The catalog and table for exercising the effect system: a Build card (whose
+  // rule, above, fires when it lands on in-play), the debt and feature source
+  // piles its effects draw from, and the persistent, empty target piles they fill.
   private val playCatalog = CardCatalog(
     List(
       CardDef(CardDefId("build"), "#3b82f6", "Build", "Ship a feature."),
@@ -253,11 +254,11 @@ class EngineSpec extends AnyWordSpec with Matchers:
       val moved = Engine.move(Engine.setup(catalog, rulebook, essential), CardId("b#0"), StackId("a")).toOption.get
       moved.stacks.exists(_.id == StackId("b")) shouldBe false
 
-  "Engine.play" should:
+  "Engine.drop" should:
 
-    "move the played card into the play zone and resolve its effects" in:
+    "relocate the card onto the stack and fire the rules its arrival triggers" in:
       val state  = Engine.setup(playCatalog, rulebook, playSetup)
-      val played = Engine.play(state, CardId("hand#0"), StackId("in-play")).toOption.get
+      val played = Engine.drop(state, CardId("hand#0"), StackId("in-play")).toOption.get
       stackOf(played, StackId("discard")).cards.size shouldBe 2
       stackOf(played, StackId("build-zone")).cards.size shouldBe 1
       stackOf(played, StackId("debt")).cards.size shouldBe 3
@@ -265,23 +266,29 @@ class EngineSpec extends AnyWordSpec with Matchers:
       stackOf(played, StackId("in-play")).cards.map(_.id) shouldBe List(CardId("hand#0"))
 
     "reject an unknown card" in:
-      Engine.play(Engine.setup(playCatalog, rulebook, playSetup), CardId("ghost"), StackId("in-play")) shouldBe Left(
+      Engine.drop(Engine.setup(playCatalog, rulebook, playSetup), CardId("ghost"), StackId("in-play")) shouldBe Left(
         EngineError.UnknownCard(CardId("ghost")),
       )
 
     "leave the table untouched when an effect over-draws its source" in:
       val state = Engine.setup(playCatalog, rulebook, drained)
-      Engine.play(state, CardId("hand#0"), StackId("in-play")) shouldBe Left(EngineError.EmptyStack(StackId("debt")))
+      Engine.drop(state, CardId("hand#0"), StackId("in-play")) shouldBe Left(EngineError.EmptyStack(StackId("debt")))
 
     "turn the revealed cards face-up where they land" in:
-      val played = Engine.play(Engine.setup(playCatalog, rulebook, playSetup), CardId("hand#0"), StackId("in-play")).toOption.get
+      val played = Engine.drop(Engine.setup(playCatalog, rulebook, playSetup), CardId("hand#0"), StackId("in-play")).toOption.get
       stackOf(played, StackId("build-zone")).cards.head.facing shouldBe Facing.Up
       stackOf(played, StackId("discard")).cards.map(_.facing).distinct shouldBe List(Facing.Up)
 
-  "Engine.playSteps" should:
+    "do nothing beyond the move when the arrival triggers no rule" in:
+      val state   = Engine.setup(playCatalog, rulebook, playSetup)
+      val dropped = Engine.drop(state, CardId("hand#0"), StackId("discard")).toOption.get
+      stackOf(dropped, StackId("discard")).cards.map(_.id) shouldBe List(CardId("hand#0"))
+      stackOf(dropped, StackId("build-zone")).cards shouldBe empty
 
-    "script the play move first, then each effect move and reveal in order" in:
-      Engine.playSteps(Engine.setup(playCatalog, rulebook, playSetup), CardId("hand#0"), StackId("in-play")) shouldBe Right(
+  "Engine.dropSteps" should:
+
+    "script the move first, then each effect move and reveal the cascade produces" in:
+      Engine.dropSteps(Engine.setup(playCatalog, rulebook, playSetup), CardId("hand#0"), StackId("in-play")) shouldBe Right(
         List(
           Step.Move(CardId("hand#0"), StackId("in-play")),
           Step.Move(CardId("features#0"), StackId("build-zone")),
