@@ -33,25 +33,108 @@ object GameView:
     var dragStack: Option[StackDrag] = None
     var looseSeq                     = 0 // supplies fresh ids for stacks split off the board
     var animating                    = false // true while a play's step script is running
+    // A floating, zoom-scaled card preview shown during a card drag (with the grab
+    // offset in screen px), so the dragged card matches its on-table size at any
+    // zoom — the native drag image can't, as it ignores the board's transform.
+    var dragGhost: Option[(dom.html.Element, Double, Double)] = None
+
+    // A 1×1 transparent GIF: handed to the browser as the drag image to suppress
+    // its own ghost, leaving our `dragGhost` clone as the only preview.
+    val blankDragImage =
+      val img = dom.document.createElement("img").asInstanceOf[dom.html.Image]
+      img.src = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+      img
 
     // Which stack is mid-shuffle: drives the shake animation, cleared on a timer.
     val shuffling = Var(Option.empty[StackId])
 
-    lazy val board: HtmlElement = div(
-      cls := "board",
-      onDragOver --> (e => e.preventDefault()),
-      onDrop --> (e => onBoardDrop(e)),
+    // Camera over the free-form table: a pan offset (screen px) and a zoom, so a
+    // crowded board can be scrolled and scaled. The stacks live inside `world`,
+    // which carries the matching transform; the board itself is the fixed viewport.
+    val pan  = Var(Position(0, 0))
+    val zoom = Var(1.0)
+    var panning: Option[(Double, Double, Position)] = None // pointer-down client x/y + pan at grab
+
+    lazy val world: HtmlElement = div(
+      cls := "world",
+      styleAttr <-- pan.signal
+        .combineWith(zoom.signal)
+        .distinct
+        .map((p, z) => s"transform:translate(${p.x}px,${p.y}px) scale($z)"),
       children <-- state.signal.map(_.stacks).distinct.map(_.map(stackView)),
     )
 
-    // Where the pointer sits on the board right now, in board pixels.
+    lazy val board: HtmlElement = div(
+      cls := "board",
+      onDragOver --> (e => onBoardDragOver(e)),
+      onDrop --> (e => onBoardDrop(e)),
+      onWheel --> (e => onZoom(e)),
+      onPointerDown --> (e => onPanStart(e)),
+      onPointerMove --> (e => onPanMove(e)),
+      onPointerUp --> (e => onPanEnd(e)),
+      onPointerCancel --> (_ => panning = None),
+      world,
+    )
+
+    // Where the pointer sits in world coordinates — board pixels as the stacks see
+    // them, with the current pan and zoom undone.
     def boardPoint(clientX: Double, clientY: Double): Position =
       val rect = board.ref.getBoundingClientRect()
-      Position((clientX - rect.left).toInt, (clientY - rect.top).toInt)
+      val p    = pan.now()
+      val z    = zoom.now()
+      Position(((clientX - rect.left - p.x) / z).toInt, ((clientY - rect.top - p.y) / z).toInt)
+
+    // Pan by dragging empty board space — not a stack or card. Pointer capture
+    // keeps the drag alive once the cursor leaves the viewport.
+    def onPanStart(e: dom.PointerEvent): Unit =
+      val onBackground = e.target == board.ref || e.target == world.ref
+      if onBackground && !animating then
+        board.ref.asInstanceOf[js.Dynamic].setPointerCapture(e.pointerId)
+        panning = Some((e.clientX, e.clientY, pan.now()))
+
+    def onPanMove(e: dom.PointerEvent): Unit =
+      panning.foreach: (sx, sy, start) =>
+        pan.set(Position((start.x + (e.clientX - sx)).toInt, (start.y + (e.clientY - sy)).toInt))
+
+    def onPanEnd(e: dom.PointerEvent): Unit =
+      panning.foreach: _ =>
+        e.currentTarget.asInstanceOf[js.Dynamic].releasePointerCapture(e.pointerId)
+        panning = None
+
+    // Zoom toward the cursor on wheel, clamped, pinning the world point under the
+    // pointer so the table scales around where you're looking.
+    def onZoom(e: dom.WheelEvent): Unit =
+      e.preventDefault()
+      val rect = board.ref.getBoundingClientRect()
+      val old  = zoom.now()
+      val next = (if e.deltaY < 0 then old * zoomStep else old / zoomStep).max(minZoom).min(maxZoom)
+      val p    = pan.now()
+      val cx   = e.clientX - rect.left
+      val cy   = e.clientY - rect.top
+      val wx   = (cx - p.x) / old
+      val wy   = (cy - p.y) / old
+      pan.set(Position((cx - wx * next).toInt, (cy - wy * next).toInt))
+      zoom.set(next)
+
+    // Tear down the floating drag preview. Called from every drop handler (a drop
+    // re-renders the dragged card, unmounting the source before its `dragend` can
+    // fire, so we cannot rely on `dragend` alone to clean up).
+    def clearDragGhost(): Unit =
+      dragGhost.foreach((g, _, _) => Option(g.parentNode).foreach(_.removeChild(g)))
+      dragGhost = None
+
+    // Allow the drop, and steer the floating drag preview so it tracks the cursor
+    // (the `drag` event's own coordinates are unreliable; `dragover` is steady).
+    def onBoardDragOver(e: dom.DragEvent): Unit =
+      e.preventDefault()
+      dragGhost.foreach: (ghost, gx, gy) =>
+        ghost.style.left = s"${e.clientX - gx}px"
+        ghost.style.top = s"${e.clientY - gy}px"
 
     // A card dropped on empty board space splits into a new stack at the point
     // under the cursor. Drops onto a stack are handled by the stack itself.
     def onBoardDrop(e: dom.DragEvent): Unit =
+      clearDragGhost()
       if animating then ()
       else
         e.preventDefault()
@@ -131,9 +214,12 @@ object GameView:
       (cardEl(card), from) match
         case (Some(el), Some(f)) =>
           val now = el.getBoundingClientRect()
+          // `f`/`now` are screen px, but the transform lives inside the zoomed
+          // world, which scales it — so divide by zoom to glide the true distance.
+          val z = zoom.now()
           el.style.zIndex = "10"
           el.style.transition = "none"
-          el.style.transform = s"translate(${f.left - now.left}px, ${f.top - now.top}px)"
+          el.style.transform = s"translate(${(f.left - now.left) / z}px, ${(f.top - now.top) / z}px)"
           el.getBoundingClientRect() // force the start offset to register before transitioning
           el.style.transition = s"transform ${moveAnimMs}ms ease"
           el.style.transform = "translate(0px, 0px)"
@@ -173,6 +259,7 @@ object GameView:
     // onto its own single-card stack it just repositions instead — so a lone card
     // can be nudged anywhere, not only by dragging it clear of the stack's bounds.
     def onStackDrop(e: dom.DragEvent, stack: Stack): Unit =
+      clearDragGhost()
       if animating then ()
       else
         dragCard.foreach: c =>
@@ -225,17 +312,37 @@ object GameView:
     // a mark (e.g. the shuffle hint). Shared by the pile and row layouts.
     def renderCard(stack: Stack, card: CardInstance, depth: Seq[String], badge: Node): Element =
       val startDrag = onDragStart --> { e =>
-        val el = e.currentTarget.asInstanceOf[dom.html.Element]
-        val r  = el.getBoundingClientRect()
-        dragCard = Some(CardDrag(card.id, (e.clientX - r.left).toInt, (e.clientY - r.top).toInt))
+        val el    = e.currentTarget.asInstanceOf[dom.html.Element]
+        val r     = el.getBoundingClientRect()
+        val z     = zoom.now()
+        val grabX = e.clientX - r.left // screen px within the rendered (zoomed) card
+        val grabY = e.clientY - r.top
+        // Store the grab offset in world units — the space `boardPoint` returns.
+        dragCard = Some(CardDrag(card.id, (grabX / z).toInt, (grabY / z).toInt))
         e.dataTransfer.setData("text/plain", card.id.value)
-        // Hide the source after the browser has captured the drag ghost (it
-        // grabs the image synchronously at dragstart), so a lone card shows
-        // only the ghost and doesn't appear to split in two.
+        // The native drag image can't be scaled to the board's zoom (it ignores
+        // ancestor transforms), so suppress it and float our own clone instead — a
+        // copy scaled by zoom, tracking the cursor via `onBoardDragOver`.
+        e.dataTransfer.asInstanceOf[js.Dynamic].setDragImage(blankDragImage, 0, 0)
+        val ghost = el.cloneNode(true).asInstanceOf[dom.html.Element]
+        ghost.classList.remove("card-stacked") // a single dragged card, not a pile
+        ghost.style.position = "fixed"
+        ghost.style.margin = "0"
+        ghost.style.left = s"${e.clientX - grabX}px"
+        ghost.style.top = s"${e.clientY - grabY}px"
+        ghost.style.zIndex = "1000"
+        ghost.style.transform = s"scale($z)"
+        ghost.style.setProperty("transform-origin", "top left")
+        ghost.style.setProperty("pointer-events", "none")
+        dom.document.body.appendChild(ghost)
+        dragGhost = Some((ghost, grabX, grabY))
+        // Hide the source so the card appears to leave its stack and only the
+        // floating clone shows; deferred so it doesn't disturb the drag start.
         dom.window.setTimeout(() => el.classList.add("card-dragging"), 0)
       }
       val endDrag = onDragEnd --> { e =>
         e.currentTarget.asInstanceOf[dom.html.Element].classList.remove("card-dragging")
+        clearDragGhost() // fallback for a cancelled drag / drop outside any target
         dragCard = None
       }
       val flip = onClick --> (_ => if !animating then state.update(s => Engine.flip(s, card.id).getOrElse(s)))
@@ -286,6 +393,11 @@ object GameView:
     )
 
   private def clamp(n: Int): Int = math.max(0, n)
+
+  // Wheel zoom: multiplicative step per notch, bounded so the table can't vanish.
+  private val zoomStep = 1.1
+  private val minZoom  = 0.3
+  private val maxZoom  = 3.0
 
   // Kept in step with the .stack.shuffling animation duration in engine.css.
   private val shuffleAnimMs = 450
