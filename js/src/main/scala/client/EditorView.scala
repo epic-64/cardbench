@@ -172,6 +172,25 @@ object EditorView:
       val d = draft.now()
       if d.name.trim.isEmpty then d.copy(name = "Untitled") else d
 
+    // Which of the three editing tabs is showing. All three panels stay mounted
+    // (so their field state and scroll survive a tab switch); only the active one
+    // is displayed.
+    val activeTab = Var("cards")
+
+    def tabButton(id: String, label: String): Element =
+      button(
+        cls := "editor-tab",
+        cls("editor-tab-active") <-- activeTab.signal.map(_ == id),
+        label,
+        onClick --> (_ => activeTab.set(id)),
+      )
+
+    def tabPanel(id: String, content: Element): Element =
+      div(
+        display <-- activeTab.signal.map(a => if a == id then "block" else "none"),
+        content,
+      )
+
     div(
       cls := "editor",
       div(
@@ -195,9 +214,15 @@ object EditorView:
             ),
           ),
         ),
-        cardsSection,
-        stacksSection,
-        rulesSection,
+        div(
+          cls := "editor-tabs",
+          tabButton("cards", "Cards"),
+          tabButton("stacks", "Stacks"),
+          tabButton("rules", "Rules"),
+        ),
+        tabPanel("cards", cardsSection),
+        tabPanel("stacks", stacksSection),
+        tabPanel("rules", rulesSection),
       ),
     )
 
