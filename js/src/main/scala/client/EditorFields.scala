@@ -25,6 +25,17 @@ object EditorFields:
       ),
     )
 
+  def textAreaField(name: String, initial: String, onChanged: String => Unit): Element =
+    field(
+      name,
+      textArea(
+        cls := "field-input field-textarea",
+        rows := 4,
+        defaultValue := initial,
+        onInput.mapToValue --> (v => onChanged(v)),
+      ),
+    )
+
   def numberField(name: String, initial: Int, onChanged: Int => Unit): Element =
     field(
       name,

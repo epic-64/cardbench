@@ -302,6 +302,20 @@
   gap: 0.4rem;
 }
 
+/* A multi-line text box for lengthy content (e.g. card descriptions). It claims
+   the full width of its wrapping row and can be dragged taller by the user. */
+.field-textarea {
+  width: 100%;
+  min-height: 4.5rem;
+  resize: vertical;
+  line-height: 1.4;
+}
+
+/* Let the description field break onto its own full-width line in the row. */
+.field:has(.field-textarea) {
+  flex: 1 0 100%;
+}
+
 /* ── fine-tune layout ─────────────────────────────────────────────────────── */
 
 .fine-tune {
