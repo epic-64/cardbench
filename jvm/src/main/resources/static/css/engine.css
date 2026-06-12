@@ -161,19 +161,10 @@
   line-height: 1.3;
 }
 
-/* Wraps the card body so absolutely-positioned overlays (the button column)
-   anchor to the card's own corners, not the stack's label-offset top. */
-.stack-card-wrap {
-  position: relative;
-}
-
-/* Authored shortcut buttons, stacked down from the card's top-left — opposite
-   corner to the shuffle/move controls at the bottom-right. */
+/* Authored shortcut buttons, listed below the card one per row and left-aligned
+   to its edge, so they never cover the card's title or text. */
 .stack-buttons {
-  position: absolute;
-  top: 0.3rem;
-  left: 0.3rem;
-  z-index: 5;
+  width: var(--card-w);
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -181,7 +172,7 @@
 }
 
 .stack-button {
-  max-width: calc(var(--card-w) - 0.6rem);
+  max-width: var(--card-w);
   padding: 0.25rem 0.5rem;
   font: inherit;
   font-size: 0.75rem;

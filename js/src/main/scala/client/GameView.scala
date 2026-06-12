@@ -161,9 +161,10 @@ object GameView:
         onDragOver --> (e => e.preventDefault()),
         onDrop --> (e => onStackDrop(e, stack)),
         labelView(stack),
-        // The card and its authored buttons share a relative wrapper so the buttons
-        // pin to the card's top-left corner regardless of the label above.
-        div(cls := "stack-card-wrap", body, stackButtons(stack)),
+        body,
+        // Authored buttons sit below the card, one per row, so they never cover
+        // its title or text.
+        stackButtons(stack),
         controls,
       )
 
