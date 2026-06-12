@@ -24,7 +24,7 @@ object GameView:
   // A stack mid-move: the live DOM element plus the grab offset within it.
   private final case class StackDrag(el: dom.html.Element, grabX: Int, grabY: Int)
 
-  def view(definition: GameDefinition): Element =
+  def view(definition: GameDefinition, onBack: () => Unit): Element =
     val initial = Engine.setup(definition.catalog, definition.rulebook, definition.setup, System.currentTimeMillis())
     val state   = Var(initial)
     val catalog = initial.catalog
@@ -404,9 +404,26 @@ object GameView:
       if stack.cards.isEmpty then div(cls := "card card-empty", "—")
       else div(cls := "zone-row", stack.cards.reverse.map(renderCard(stack, _, Nil, emptyNode)))
 
+    // Snap every authored stack back to the position it started at. Loose stacks
+    // split off mid-play have no authored home, so they're left where they lie.
+    def restorePositions(): Unit =
+      if !animating then
+        state.update(s => definition.setup.stacks.foldLeft(s)((acc, sp) => Engine.moveStack(acc, sp.id, sp.position).getOrElse(acc)))
+
     div(
-      cls := "game",
-      board,
+      cls := "play-screen",
+      div(
+        cls := "toolbar",
+        button(cls := "btn", "← Library", onClick --> (_ => onBack())),
+        span(cls := "toolbar-title", definition.name),
+        button(
+          cls   := "btn",
+          title := "Move every stack back to its starting position",
+          "⟲ Restore positions",
+          onClick --> (_ => restorePositions()),
+        ),
+      ),
+      div(cls := "game", board),
     )
 
   private def clamp(n: Int): Int = math.max(0, n)
