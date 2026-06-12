@@ -84,11 +84,22 @@ object EditorView:
     def effectRow(i: Int, j: Int): Element =
       def updateDeal(g: Effect.Deal => Effect.Deal): Unit =
         updateRule(i): r =>
-          r.copy(effects = r.effects.lift(j).fold(r.effects) { case d: Effect.Deal => r.effects.updated(j, g(d)) })
+          r.copy(effects = r.effects.lift(j).fold(r.effects) {
+            case d: Effect.Deal => r.effects.updated(j, g(d))
+            case _              => r.effects
+          })
+      def updateShuffle(g: Effect.Shuffle => Effect.Shuffle): Unit =
+        updateRule(i): r =>
+          r.copy(effects = r.effects.lift(j).fold(r.effects) {
+            case s: Effect.Shuffle => r.effects.updated(j, g(s))
+            case _                 => r.effects
+          })
       def removeEffect(): Unit =
         updateRule(i)(r => r.copy(effects = r.effects.patch(j, Nil, 1)))
       def dealField(pick: Effect.Deal => String): Signal[String] =
         draft.signal.map(_.rulebook.rules.lift(i).flatMap(_.effects.lift(j)) match { case Some(d: Effect.Deal) => pick(d); case _ => "" }).distinct
+      def shuffleField: Signal[String] =
+        draft.signal.map(_.rulebook.rules.lift(i).flatMap(_.effects.lift(j)) match { case Some(s: Effect.Shuffle) => s.stack.value; case _ => "" }).distinct
       draft.now().rulebook.rules(i).effects(j) match
         case Effect.Deal(_, _, count, facing) =>
           div(
@@ -97,6 +108,12 @@ object EditorView:
             idSelectField("to", stackIds, dealField(_.to.value), v => updateDeal(_.copy(to = StackId(v)))),
             numberField("Count", count, n => updateDeal(_.copy(count = n))),
             selectField("Facing", targetFacingOptions, facing, f => updateDeal(_.copy(targetFacing = f))),
+            removeButton(() => removeEffect()),
+          )
+        case _: Effect.Shuffle =>
+          div(
+            cls := "editor-subrow",
+            idSelectField("Shuffle stack", stackIds, shuffleField, v => updateShuffle(_.copy(stack = StackId(v)))),
             removeButton(() => removeEffect()),
           )
 
@@ -115,7 +132,12 @@ object EditorView:
         ),
         div(
           cls := "editor-subsection",
-          div(cls := "editor-subsection-head", span("Effects"), addButton("+ Add effect", () => updateRule(i)(r => r.copy(effects = r.effects :+ Effect.Deal(StackId(""), StackId("")))))),
+          div(
+            cls := "editor-subsection-head",
+            span("Effects"),
+            addButton("+ Add deal", () => updateRule(i)(r => r.copy(effects = r.effects :+ Effect.Deal(StackId(""), StackId(""))))),
+            addButton("+ Add shuffle", () => updateRule(i)(r => r.copy(effects = r.effects :+ Effect.Shuffle(StackId(""))))),
+          ),
           div(cls := "editor-rows", children <-- indexed(draft.signal.map(_.rulebook.rules.lift(i).fold(0)(_.effects.size)), j => effectRow(i, j))),
         ),
       )

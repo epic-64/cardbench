@@ -45,6 +45,17 @@ class EngineSpec extends AnyWordSpec with Matchers:
     ),
   )
 
+  // A rulebook whose single reaction shuffles the debt pile when a Build lands on
+  // in-play — exercising the Shuffle effect in isolation from any deal.
+  private val shuffleRulebook = Rulebook(
+    List(
+      Rule(
+        Trigger.Moved(CardDefId("build"), StackId("in-play")),
+        effects = List(Effect.Shuffle(StackId("debt"))),
+      ),
+    ),
+  )
+
   // The same deck, but flagged to shuffle at setup.
   private val shuffledSetup = GameSetup(
     List(
@@ -317,6 +328,30 @@ class EngineSpec extends AnyWordSpec with Matchers:
         ),
       )
 
+  "Engine.drop with a shuffle effect" should:
+
+    "reorder the targeted stack while keeping its exact cards" in:
+      val before = Engine.setup(playCatalog, shuffleRulebook, playSetup)
+      val after  = Engine.drop(before, CardId("hand#0"), StackId("in-play"), 42L).toOption.get
+      stackOf(after, StackId("debt")).cards.toSet shouldBe stackOf(before, StackId("debt")).cards.toSet
+
+    "actually shake up the order rather than leave it as it lay" in:
+      val before = Engine.setup(playCatalog, shuffleRulebook, playSetup)
+      val after  = Engine.drop(before, CardId("hand#0"), StackId("in-play"), 42L).toOption.get
+      stackOf(after, StackId("debt")).cards should not be stackOf(before, StackId("debt")).cards
+
+    "flag the reordered stack as freshly shuffled" in:
+      val after = Engine.drop(Engine.setup(playCatalog, shuffleRulebook, playSetup), CardId("hand#0"), StackId("in-play"), 42L).toOption.get
+      stackOf(after, StackId("debt")).shuffled shouldBe true
+
+    "reproduce the same table for the same seed" in:
+      val state = Engine.setup(playCatalog, shuffleRulebook, playSetup)
+      Engine.drop(state, CardId("hand#0"), StackId("in-play"), 42L) shouldBe Engine.drop(state, CardId("hand#0"), StackId("in-play"), 42L)
+
+    "script a single shuffle step naming the targeted stack" in:
+      val steps = Engine.dropSteps(Engine.setup(playCatalog, shuffleRulebook, playSetup), CardId("hand#0"), StackId("in-play"), 42L).toOption.get
+      steps.collect { case Step.Shuffle(stack, _) => stack } shouldBe List(StackId("debt"))
+
   "Engine.dealSteps" should:
 
     "script one move per card off the top of the source onto the target" in:
@@ -342,6 +377,9 @@ class EngineSpec extends AnyWordSpec with Matchers:
 
     "round-trip a rulebook of card effects unchanged" in:
       read[Rulebook](write(rulebook)) shouldBe rulebook
+
+    "round-trip a rulebook with a shuffle effect unchanged" in:
+      read[Rulebook](write(shuffleRulebook)) shouldBe shuffleRulebook
 
     "round-trip a setup with persistent stacks unchanged" in:
       read[GameSetup](write(playSetup)) shouldBe playSetup

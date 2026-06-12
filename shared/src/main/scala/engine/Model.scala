@@ -72,23 +72,27 @@ object TargetFacing:
     },
   )
 
-/** What a rule does when it fires — a single move. The vocabulary is one
-  * primitive: `Deal` moves `count` cards (default 1) from the top of one stack
-  * onto the top of another, forcing each dealt card into `targetFacing` (`Keep`
-  * leaves it as it lies; `Up`/`Down` flip it only when it isn't already there).
-  * Each move is itself an `Event`, so an effect can cascade into further rules;
-  * everything richer composes from more of these.
+/** What a rule does when it fires. `Deal` moves `count` cards (default 1) from
+  * the top of one stack onto the top of another, forcing each dealt card into
+  * `targetFacing` (`Keep` leaves it as it lies; `Up`/`Down` flip it only when it
+  * isn't already there); each move is itself an `Event`, so it can cascade into
+  * further rules. `Shuffle` reorders one stack in place. Everything richer
+  * composes from more of these.
   */
 enum Effect derives ReadWriter:
   case Deal(from: StackId, to: StackId, count: Int = 1, targetFacing: TargetFacing = TargetFacing.Keep)
+  case Shuffle(stack: StackId)
 
-/** One atomic, animatable change in a cascade: relocate a single card, or flip
-  * one. `Engine.dropSteps` emits these in order so the shell can animate them one
-  * by one; `Engine.drop` simply applies them all at once.
+/** One atomic, animatable change in a cascade: relocate a single card, flip one,
+  * or reorder a stack. `Engine.dropSteps` emits these in order so the shell can
+  * animate them one by one; `Engine.drop` simply applies them all at once. A
+  * `Shuffle` step carries the concrete `seed` the cascade rolled, so replaying
+  * the script reproduces the exact same order.
   */
 enum Step:
   case Move(card: CardId, to: StackId)
   case Flip(card: CardId)
+  case Shuffle(stack: StackId, seed: Long)
 
 /** Something that just happened on the table — the signal the effect system
   * reacts to. The only kind so far: a card came to rest on a stack. A rule whose

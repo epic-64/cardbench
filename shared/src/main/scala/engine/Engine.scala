@@ -73,8 +73,8 @@ object Engine:
     * Applies the whole cascade at once; see `dropSteps` for the step-by-step form
     * the animated shell uses.
     */
-  def drop(state: GameState, card: CardId, onto: StackId): Either[EngineError, GameState] =
-    dropSteps(state, card, onto).map(applySteps(state, _))
+  def drop(state: GameState, card: CardId, onto: StackId, seed: Long = 0L): Either[EngineError, GameState] =
+    dropSteps(state, card, onto, seed).map(applySteps(state, _))
 
   /** The script a drop runs: the card relocating onto `onto`, then one ordered
     * `Step` per atomic move or flip the reactions produce, cascading through the
@@ -82,8 +82,8 @@ object Engine:
     * (e.g. an effect dealing from an empty stack) aborts before a single step is
     * returned — a drop is all-or-nothing.
     */
-  def dropSteps(state: GameState, card: CardId, onto: StackId): Either[EngineError, List[Step]] =
-    resolveMove(state, card, onto, TargetFacing.Keep).map(_._2)
+  def dropSteps(state: GameState, card: CardId, onto: StackId, seed: Long = 0L): Either[EngineError, List[Step]] =
+    resolveMove(state, card, onto, TargetFacing.Keep, seed).map(_._2)
 
   /** The script a stack button runs: deal *up to* `count` cards from the top of
     * `from` onto `to`, each relocation cascading through the rules exactly like a
@@ -92,8 +92,8 @@ object Engine:
     * stack deals 5. Threaded through `Either` only for the per-card failures the
     * cascade itself can raise.
     */
-  def dealSteps(state: GameState, from: StackId, to: StackId, count: Int): Either[EngineError, List[Step]] =
-    runDeal(state, Effect.Deal(from, to, count), lenient = true).map(_._2)
+  def dealSteps(state: GameState, from: StackId, to: StackId, count: Int, seed: Long = 0L): Either[EngineError, List[Step]] =
+    runEffect(state, Effect.Deal(from, to, count), seed, lenient = true).map(_._2)
 
   /** Flip a single card between Up and Down; nothing else changes. */
   def flip(state: GameState, card: CardId): Either[EngineError, GameState] =
@@ -147,6 +147,7 @@ object Engine:
     card: CardId,
     to: StackId,
     facing: TargetFacing,
+    seed: Long,
   ): Either[EngineError, (GameState, List[Step])] =
     for
       instance <- findCard(state, card).toRight(UnknownCard(card))
@@ -155,24 +156,27 @@ object Engine:
       flipped   = flips.foldLeft(moved)((s, _) => flip(s, card).getOrElse(s))
       event     = Event.Moved(card, instance.defId, to)
       effects   = state.rules.filter(_.trigger.fires(event)).flatMap(_.effects)
-      reacted  <- runEffects(flipped, effects)
+      reacted  <- runEffects(flipped, effects, seed)
     yield (reacted._1, (Step.Move(card, to) :: flips) ++ reacted._2)
 
   /** Run a list of effects in order, threading state and accumulating steps. */
-  private def runEffects(state: GameState, effects: List[Effect]): Either[EngineError, (GameState, List[Step])] =
+  private def runEffects(state: GameState, effects: List[Effect], seed: Long): Either[EngineError, (GameState, List[Step])] =
     effects.foldLeft[Either[EngineError, (GameState, List[Step])]](Right((state, Nil))):
       (acc, effect) =>
         acc.flatMap:
-          case (s, steps) => runDeal(s, effect).map((s2, more) => (s2, steps ++ more))
+          case (s, steps) => runEffect(s, effect, seed).map((s2, more) => (s2, steps ++ more))
 
-  /** A `Deal` as `count` single relocations, each resolved (and so itself able to
-    * set off further reactions) by `resolveMove`. Strict by default: a rule effect
-    * that over-draws its source aborts the whole cascade (see `runEffects`). When
-    * `lenient` — the form a stack button runs — a dry source instead stops the
-    * deal early, dealing only what was there. */
-  private def runDeal(
+  /** Run one effect. A `Deal` is `count` single relocations, each resolved (and so
+    * itself able to set off further reactions) by `resolveMove`; strict by default,
+    * a rule effect that over-draws its source aborts the whole cascade (see
+    * `runEffects`), while `lenient` — the form a stack button runs — instead stops
+    * a dry deal early, dealing only what was there. A `Shuffle` reorders one stack
+    * with a per-stack seed derived from `seed`, recording that seed in the step so
+    * replay reproduces the order. */
+  private def runEffect(
     state: GameState,
     effect: Effect,
+    seed: Long,
     lenient: Boolean = false,
   ): Either[EngineError, (GameState, List[Step])] =
     effect match
@@ -186,15 +190,19 @@ object Engine:
                 find(s, from).flatMap(_.cards.headOption.toRight(EmptyStack(from))) match
                   case Left(_) if lenient  => Right((s, steps))
                   case Left(err)           => Left(err)
-                  case Right(top)          => resolveMove(s, top.id, to, facing).map((s2, more) => (s2, steps ++ more))
+                  case Right(top)          => resolveMove(s, top.id, to, facing, seed).map((s2, more) => (s2, steps ++ more))
+      case Effect.Shuffle(stack) =>
+        val stackSeed = seed ^ stack.value.hashCode.toLong
+        shuffle(state, stack, stackSeed).map(reordered => (reordered, List(Step.Shuffle(stack, stackSeed))))
 
   /** Run a script straight through, ignoring per-step errors the script's own
     * construction already ruled out. */
   private def applySteps(state: GameState, steps: List[Step]): GameState =
     steps.foldLeft(state): (s, step) =>
       step match
-        case Step.Move(card, to) => move(s, card, to).getOrElse(s)
-        case Step.Flip(card)     => flip(s, card).getOrElse(s)
+        case Step.Move(card, to)        => move(s, card, to).getOrElse(s)
+        case Step.Flip(card)            => flip(s, card).getOrElse(s)
+        case Step.Shuffle(stack, seed)  => shuffle(s, stack, seed).getOrElse(s)
 
   private def find(state: GameState, id: StackId): Either[EngineError, Stack] =
     state.stacks.find(_.id == id).toRight(UnknownStack(id))
