@@ -194,6 +194,34 @@
   padding: var(--gap);
 }
 
+/* Tab bar that switches between the cards, stacks, and rules panels. */
+.editor-tabs {
+  display: flex;
+  gap: var(--gap-sm);
+  border-bottom: var(--border);
+}
+
+.editor-tab {
+  font: inherit;
+  font-size: 0.95rem;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: -1px;
+  cursor: pointer;
+}
+
+.editor-tab:hover {
+  color: var(--text);
+}
+
+.editor-tab-active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
 .editor-section > h2 {
   margin: 0 0 var(--gap-sm);
   font-size: 1.1rem;
