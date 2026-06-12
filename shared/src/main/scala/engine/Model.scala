@@ -44,15 +44,44 @@ object Facing:
     },
   )
 
+/** What facing a dealt card should end up in. `Keep` leaves it as it lies; `Up`
+  * and `Down` force it, flipping only when the card isn't already that way.
+  */
+enum TargetFacing:
+  case Up, Down, Keep
+
+  /** The concrete facing to force, or `None` to leave the card untouched. */
+  def facing: Option[Facing] = this match
+    case Up   => Some(Facing.Up)
+    case Down => Some(Facing.Down)
+    case Keep => None
+
+object TargetFacing:
+  // Lowercase on the wire, matching the authored setup JSON.
+  given ReadWriter[TargetFacing] = readwriter[String].bimap(
+    {
+      case TargetFacing.Up   => "up"
+      case TargetFacing.Down => "down"
+      case TargetFacing.Keep => "keep"
+    },
+    {
+      case "up"   => TargetFacing.Up
+      case "down" => TargetFacing.Down
+      case "keep" => TargetFacing.Keep
+      case other  => sys.error(s"Unknown target facing: $other")
+    },
+  )
+
 /** A consequence of playing a card — a single move event. The vocabulary is one
   * primitive: `Deal` moves `count` cards (default 1) from the top of one stack
-  * onto the top of another, flipping each face-up if `reveal` is set. Everything
-  * richer composes from more of these, including where a *played* card ends up:
-  * since playing first drops the card on the play stack, sending it onward (e.g.
-  * to a discard) is just a `Deal` out of that stack.
+  * onto the top of another, forcing each dealt card into `targetFacing` (`Keep`
+  * leaves it as it lies; `Up`/`Down` flip it only when it isn't already there).
+  * Everything richer composes from more of these, including where a *played* card
+  * ends up: since playing first drops the card on the play stack, sending it
+  * onward (e.g. to a discard) is just a `Deal` out of that stack.
   */
 enum Effect derives ReadWriter:
-  case Deal(from: StackId, to: StackId, count: Int = 1, reveal: Boolean = false)
+  case Deal(from: StackId, to: StackId, count: Int = 1, targetFacing: TargetFacing = TargetFacing.Keep)
 
 /** One atomic, animatable move in a play's resolution: relocate a single card,
   * or flip one. `Engine.playSteps` emits these in order so the shell can animate

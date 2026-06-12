@@ -44,9 +44,9 @@ object SampleGame:
         CardDefId("build"),
         effects = List(
           // First you draw a feature into your building zone, revealed…
-          Effect.Deal(StackId("features"), StackId("build-zone"), 1, reveal = true),
+          Effect.Deal(StackId("features"), StackId("build-zone"), 1, targetFacing = TargetFacing.Up),
           // …then shipping accrues debt: two Tech Debt cards turn up in your discard.
-          Effect.Deal(StackId("debt"), StackId("discard"), 2, reveal = true),
+          Effect.Deal(StackId("debt"), StackId("discard"), 2, targetFacing = TargetFacing.Up),
           // …and finally the spent Build card itself moves on from the play zone
           // to the discard — what used to be `playsTo`, now just another move.
           Effect.Deal(playZone, StackId("discard")),

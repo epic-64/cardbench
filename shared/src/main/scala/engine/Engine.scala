@@ -128,11 +128,12 @@ object Engine:
 
   /** The steps one effect contributes, plus the state after running them (so the
     * next effect sees updated stack tops). `Deal` is `count` single deals; each
-    * emits a `Move`, and a `Flip` too when `reveal` turns a face-down card up.
+    * emits a `Move`, and a `Flip` too when `targetFacing` forces a card that
+    * isn't already that way.
     */
   private def dealSteps(state: GameState, effect: Effect): Either[EngineError, (GameState, List[Step])] =
     effect match
-      case Effect.Deal(from, to, count, reveal) =>
+      case Effect.Deal(from, to, count, targetFacing) =>
         List.fill(count)(()).foldLeft[Either[EngineError, (GameState, List[Step])]](Right((state, Nil))):
           (acc, _) =>
             acc.flatMap:
@@ -142,7 +143,7 @@ object Engine:
                   top   <- src.cards.headOption.toRight(EmptyStack(from))
                   dealt <- deal(s, from, to)
                 yield
-                  val flips = if reveal && top.facing == Facing.Down then List(Step.Flip(top.id)) else Nil
+                  val flips = targetFacing.facing.filter(_ != top.facing).map(_ => Step.Flip(top.id)).toList
                   val next  = flips.foldLeft(dealt)((st, _) => flip(st, top.id).getOrElse(st))
                   (next, steps ++ (Step.Move(top.id, to) :: flips))
 
