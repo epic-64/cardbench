@@ -148,20 +148,33 @@ object EditorView:
         removeButton(() => updateStack(i)(s => s.copy(contents = s.contents.patch(j, Nil, 1)))),
       )
 
+    // Copy a stack whole — including every spawn in its contents — with a fresh id
+    // and a small position nudge so the duplicate doesn't sit exactly on top of the
+    // original on the board.
+    def duplicateStack(s: StackSpec): StackSpec =
+      s.copy(
+        id = StackId(s"${s.id.value}-copy"),
+        position = s.position.copy(x = s.position.x + 20, y = s.position.y + 20),
+      )
+
     def stackRow(i: Int): Element =
       val s = draft.now().setup.stacks(i)
       div(
-        cls := "editor-row editor-row-block",
+        cls := "editor-stack",
         div(
-          cls := "editor-row",
+          cls := "editor-stack-head",
           textField("Id", s.id.value, v => updateStack(i)(_.copy(id = StackId(v)))),
           textField("Label", s.label, v => updateStack(i)(_.copy(label = v))),
-          numberField("X", s.position.x, n => updateStack(i)(st => st.copy(position = st.position.copy(x = n)))),
-          numberField("Y", s.position.y, n => updateStack(i)(st => st.copy(position = st.position.copy(y = n)))),
-          removeButton(() => setStacks(ss => ss.patch(i, Nil, 1))),
+          div(
+            cls := "editor-card-actions",
+            duplicateButton(() => setStacks(ss => ss.lift(i).fold(ss)(s => ss.patch(i + 1, List(duplicateStack(s)), 0)))),
+            removeButton(() => setStacks(ss => ss.patch(i, Nil, 1))),
+          ),
         ),
         div(
           cls := "editor-row",
+          numberField("X", s.position.x, n => updateStack(i)(st => st.copy(position = st.position.copy(x = n)))),
+          numberField("Y", s.position.y, n => updateStack(i)(st => st.copy(position = st.position.copy(y = n)))),
           selectField("Facing", facingOptions, s.facing, f => updateStack(i)(_.copy(facing = f))),
           selectField("Arrangement", arrangementOptions, s.arrangement, a => updateStack(i)(_.copy(arrangement = a))),
           selectField("Layout", layoutOptions, s.layout, l => updateStack(i)(_.copy(layout = l))),
@@ -180,6 +193,7 @@ object EditorView:
       () => setStacks(_ :+ StackSpec(StackId("new-stack"), "New Stack", Position(0, 0), Facing.Down, Nil)),
       draft.signal.map(_.setup.stacks.size),
       stackRow,
+      rowsClass = "editor-stacks-grid",
     )
 
     // ── stack buttons ───────────────────────────────────────────────────────
