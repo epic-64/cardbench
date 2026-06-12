@@ -207,6 +207,23 @@ class EngineSpec extends AnyWordSpec with Matchers:
       stackOf(flipped, deck).cards.head.facing shouldBe Facing.Up
       stackOf(flipped, deck).cards.tail.map(_.facing).distinct shouldBe List(Facing.Down)
 
+  "Engine.flipStack" should:
+
+    "turn every card in the stack to the opposite facing" in:
+      val state   = Engine.setup(catalog, rulebook, setup)
+      val flipped = Engine.flipStack(state, deck).toOption.get
+      stackOf(flipped, deck).cards.map(_.facing).distinct shouldBe List(Facing.Up)
+
+    "leave the pile order unchanged" in:
+      val state   = Engine.setup(catalog, rulebook, setup)
+      val flipped = Engine.flipStack(state, deck).toOption.get
+      stackOf(flipped, deck).cards.map(_.id) shouldBe stackOf(state, deck).cards.map(_.id)
+
+    "reject an unknown stack" in:
+      Engine.flipStack(Engine.setup(catalog, rulebook, setup), StackId("nope")) shouldBe Left(
+        EngineError.UnknownStack(StackId("nope")),
+      )
+
   "Engine.moveStack" should:
 
     "reposition the stack while keeping its cards" in:

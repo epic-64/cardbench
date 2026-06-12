@@ -62,3 +62,27 @@ object GameStore:
 
   private def persist(defs: List[GameDefinition]): Unit =
     dom.window.localStorage.setItem(key, write(defs))
+
+  // ── ongoing games ──────────────────────────────────────────────────────────
+  // A game's *definition* (catalog, rules, setup) lives in the library above; its
+  // live table — where the cards have ended up mid-play — is saved apart, one key
+  // per game id. Only the mutable part (the stacks) is stored: the catalog and
+  // rules are rebuilt from the definition on load, so editing a game never leaves
+  // a saved table referring to a stale rulebook.
+
+  private def gameKey(id: String): String = s"gigadev.game.$id"
+
+  /** The saved live table for a game, if one is in progress; `None` when the game
+    * has never been played (or was restarted) and an unreadable save reads as none.
+    */
+  def loadGame(id: String): Option[List[Stack]] =
+    Option(dom.window.localStorage.getItem(gameKey(id)))
+      .flatMap(json => Try(read[List[Stack]](json)).toOption)
+
+  /** Record the current live table for a game, overwriting any earlier save. */
+  def saveGame(id: String, stacks: List[Stack]): Unit =
+    dom.window.localStorage.setItem(gameKey(id), write(stacks))
+
+  /** Forget a game's saved table, so the next play starts from a fresh setup. */
+  def clearGame(id: String): Unit =
+    dom.window.localStorage.removeItem(gameKey(id))
