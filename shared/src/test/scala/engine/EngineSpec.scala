@@ -25,8 +25,8 @@ class EngineSpec extends AnyWordSpec with Matchers:
       CardRule(
         CardDefId("build"),
         effects = List(
-          Effect.Deal(StackId("features"), StackId("build-zone"), 1, reveal = true),
-          Effect.Deal(StackId("debt"), StackId("discard"), 2, reveal = true),
+          Effect.Deal(StackId("features"), StackId("build-zone"), 1, targetFacing = TargetFacing.Up),
+          Effect.Deal(StackId("debt"), StackId("discard"), 2, targetFacing = TargetFacing.Up),
         ),
       ),
     ),
