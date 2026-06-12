@@ -310,12 +310,10 @@ class EngineSpec extends AnyWordSpec with Matchers:
         ),
       )
 
-    "abort when the source runs dry before the count is met" in:
+    "deal only as many as the source holds when asked for more" in:
       // The 12-card deck is drained on the 12th draw and (not being persistent)
-      // ceases to exist, so the 13th has no stack left to draw from.
-      Engine.dealSteps(Engine.setup(catalog, rulebook, setup), deck, discard, 13) shouldBe Left(
-        EngineError.UnknownStack(deck),
-      )
+      // ceases to exist; asking for 13 deals all 12 it has rather than failing.
+      Engine.dealSteps(Engine.setup(catalog, rulebook, setup), deck, discard, 13).map(_.length) shouldBe Right(12)
 
   "JSON codecs" should:
 
