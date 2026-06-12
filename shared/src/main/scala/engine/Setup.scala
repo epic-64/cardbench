@@ -2,8 +2,8 @@ package engine
 
 import upickle.default.{ReadWriter, readwriter}
 
-// Two authored artifacts. JSON is the on-disk format (upickle); these case
-// classes are the schema.
+// Three authored artifacts — catalog, rulebook, setup. JSON is the on-disk
+// format (upickle); these case classes are the schema.
 
 /** How a stack's authored cards are arranged at setup. `Ordered` keeps them as
   * written; `Shuffled` deals them in a seeded-random order.
@@ -45,3 +45,21 @@ case class GameSetup(stacks: List[StackSpec]) derives ReadWriter
 
 /** What cards exist, for rendering. */
 case class CardCatalog(cards: List[CardDef]) derives ReadWriter
+
+/** A single card kind's play behaviour, addressed by its def id: the `effects`
+  * that resolve, in order, when the card is played (see `Engine.play`). Where the
+  * spent card itself lands is just one of those effects — a `Deal` out of the
+  * play stack — so there is no separate destination field. Held apart from the
+  * `CardDef` on purpose: the catalog says what a card *is*, a rule says what it
+  * *does*.
+  */
+case class CardRule(
+  card: CardDefId,
+  effects: List[Effect] = Nil,
+) derives ReadWriter
+
+/** The effect system as authored data: every card kind that does something when
+  * played. Kinds with no rule here are inert. Kept wholly separate from the
+  * `CardCatalog` so presentation and behaviour can be authored independently.
+  */
+case class Rulebook(rules: List[CardRule]) derives ReadWriter

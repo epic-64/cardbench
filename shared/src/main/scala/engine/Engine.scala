@@ -11,8 +11,9 @@ object Engine:
     * `shuffled` is ordered by a per-stack seeded RNG, so the same `seed`
     * reproduces the same table. Unflagged stacks keep their authored order.
     */
-  def setup(catalog: CardCatalog, gameSetup: GameSetup, seed: Long = 0L): GameState =
-    val defs = catalog.cards.map(c => c.id -> c).toMap
+  def setup(catalog: CardCatalog, rulebook: Rulebook, gameSetup: GameSetup, seed: Long = 0L): GameState =
+    val defs  = catalog.cards.map(c => c.id -> c).toMap
+    val rules = rulebook.rules.map(r => r.card -> r).toMap
     val stacks = gameSetup.stacks.map: spec =>
       val instances = spec.contents
         .flatMap(spawn => List.fill(spawn.count)(spawn.card))
@@ -32,7 +33,7 @@ object Engine:
         persistent = spec.persistent,
         layout = spec.layout,
       )
-    GameState(defs, stacks)
+    GameState(defs, rules, stacks)
 
   /** Reorder one stack using a seeded RNG. Same seed ⇒ same order. Marks the
     * stack `shuffled` until something touches its cards again.
@@ -65,28 +66,34 @@ object Engine:
       val placed = without.map(s => if s.id == to then s.copy(cards = instance :: s.cards, shuffled = false) else s)
       state.copy(stacks = dropEmpty(placed))
 
-  /** Play a card: resolve its definition's effects in order, then move the
-    * played instance onto `to`. Applies the whole script at once; see
-    * `playSteps` for the step-by-step form the animated shell uses.
+  /** Play a card into `into` (the play zone): move it there, then resolve its
+    * rule's effects in order. Applies the whole script at once; see `playSteps`
+    * for the step-by-step form the animated shell uses.
     */
-  def play(state: GameState, card: CardId, to: StackId): Either[EngineError, GameState] =
-    playSteps(state, card, to).map(applySteps(state, _))
+  def play(state: GameState, card: CardId, into: StackId): Either[EngineError, GameState] =
+    playSteps(state, card, into).map(applySteps(state, _))
 
-  /** The script a play would run: one ordered `Step` per atomic move or flip,
-    * ending with the played card moving onto `to`. The whole thing is threaded
-    * through `Either`, so any failure (e.g. an effect dealing from an empty
-    * stack) aborts before a single step is returned — playing is all-or-nothing.
+  /** The script a play would run: the card moving into `into` (the play zone),
+    * then one ordered `Step` per atomic move or flip its effects produce. Where
+    * the played card finally lands is itself an effect — a `Deal` out of the play
+    * zone — so a card whose rule has none simply stays in `into`. Threaded through
+    * `Either`, so any failure (e.g. an effect dealing from an empty stack) aborts
+    * before a single step is returned — playing is all-or-nothing.
     */
-  def playSteps(state: GameState, card: CardId, to: StackId): Either[EngineError, List[Step]] =
+  def playSteps(state: GameState, card: CardId, into: StackId): Either[EngineError, List[Step]] =
     for
       instance <- findCard(state, card).toRight(UnknownCard(card))
-      cardDef  <- state.catalog.get(instance.defId).toRight(UnknownCardDef(instance.defId))
-      _        <- find(state, to)
-      resolved <- cardDef.effects.foldLeft[Either[EngineError, (GameState, List[Step])]](Right((state, Nil))):
+      _        <- state.catalog.get(instance.defId).toRight(UnknownCardDef(instance.defId))
+      // Playing is, at bottom, a move onto the play stack; effects resolve on top.
+      played <- move(state, card, into)
+      // Behaviour comes from the rulebook, not the catalog: an unlisted kind is inert.
+      effects = state.rules.get(instance.defId).map(_.effects).getOrElse(Nil)
+      start   = (played, List(Step.Move(card, into)))
+      resolved <- effects.foldLeft[Either[EngineError, (GameState, List[Step])]](Right(start)):
                     (acc, effect) =>
                       acc.flatMap:
                         case (s, steps) => dealSteps(s, effect).map((s2, more) => (s2, steps ++ more))
-    yield resolved._2 :+ Step.Move(card, to)
+    yield resolved._2
 
   /** Flip a single card between Up and Down; nothing else changes. */
   def flip(state: GameState, card: CardId): Either[EngineError, GameState] =

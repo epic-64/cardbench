@@ -13,19 +13,7 @@ object SampleGame:
   val catalog: CardCatalog = CardCatalog(
     List(
       // HAND CARDS
-      CardDef(
-        CardDefId("build"),
-        "#3b82f6",
-        "Build",
-        "Ship a feature to fulfil a Request.",
-        effects = List(
-          // First you draw a feature into your building zone, revealed…
-          Effect.Deal(StackId("features"), StackId("build-zone"), 1, reveal = true),
-          // …then shipping accrues debt: two Tech Debt cards turn up in your discard.
-          Effect.Deal(StackId("debt"), StackId("discard"), 2, reveal = true),
-        ),
-        playsTo = Some(StackId("discard")), // the spent Build card goes to discard
-      ),
+      CardDef(CardDefId("build"), "#3b82f6", "Build", "Ship a feature to fulfil a Request."),
       CardDef(CardDefId("refactor"), "#22c55e", "Refactor", "Remove 2 debt cards from your hand or deck."),
       CardDef(CardDefId("test"), "#eab308", "Test", "Prevent the next Bug event."),
       CardDef(CardDefId("backup"), "#a855f7", "Backup", "Prevent the next data-loss disaster."),
@@ -44,6 +32,26 @@ object SampleGame:
       CardDef(CardDefId("stakeholder-pivot"), "#db2777", "Stakeholder Pivot", "Replace the middle feature of a customer project with a new card from the feature deck."),
       CardDef(CardDefId("burnout"), "#ea580c", "Burnout", "If you have two or more Tech Debt cards, discard one non-debt card from your hand."),
       CardDef(CardDefId("ci-cd"), "#0891b2", "CI/CD", "If you have 2 or more Tests in play, draw a card and play an additional card this turn."),
+    ),
+  )
+
+  // The effect system, authored apart from the catalog above. Only the cards
+  // that *do* something appear here; everything else is inert. Each rule names a
+  // card kind and the script that fires when an instance of it is played.
+  val rulebook: Rulebook = Rulebook(
+    List(
+      CardRule(
+        CardDefId("build"),
+        effects = List(
+          // First you draw a feature into your building zone, revealed…
+          Effect.Deal(StackId("features"), StackId("build-zone"), 1, reveal = true),
+          // …then shipping accrues debt: two Tech Debt cards turn up in your discard.
+          Effect.Deal(StackId("debt"), StackId("discard"), 2, reveal = true),
+          // …and finally the spent Build card itself moves on from the play zone
+          // to the discard — what used to be `playsTo`, now just another move.
+          Effect.Deal(playZone, StackId("discard")),
+        ),
+      ),
     ),
   )
 
@@ -124,7 +132,7 @@ object SampleGame:
         layout = Layout.Row, // built features sit side by side, not in a heap
       ),
       // Drop a card here to play it: its effects resolve and it moves on to its
-      // post-play destination (see CardDef.playsTo).
+      // post-play destination (see the rulebook's CardRule.playsTo).
       StackSpec(
         playZone,
         "Play",
