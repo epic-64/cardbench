@@ -304,6 +304,44 @@
   margin-left: auto;
 }
 
+/* Stacks render as a responsive grid of tiles, like the catalog — far more
+   scannable than one full-width block per stack. Tiles align to the top so a
+   stack with many contents doesn't stretch its neighbours. */
+.editor-stacks-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: var(--gap-sm);
+  align-items: start;
+}
+
+.editor-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-sm);
+  background: var(--field-bg);
+  border: var(--border);
+  border-radius: var(--card-radius);
+  padding: var(--gap-sm);
+}
+
+/* Id and label share the top row, with the duplicate/remove actions pinned right. */
+.editor-stack-head {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--gap-sm);
+}
+
+.editor-stack-head .field {
+  flex: 1;
+  min-width: 0;
+}
+
+.editor-stack-head .field-input {
+  width: 100%;
+  box-sizing: border-box;
+  min-width: 0;
+}
+
 /* A row of fields; wraps on narrow screens rather than overflowing. */
 .editor-row {
   display: flex;
@@ -456,11 +494,34 @@
   z-index: 10;
 }
 
-/* A live coordinate badge pinned to the stack's top-left corner. */
+/* Ghost outlines marking the rows that flank the card in play — the title above
+   and the (potential) button row below — so a stack's full footprint stays visible
+   while arranging, even when it has no label or buttons yet. */
+.tune-slot {
+  box-sizing: border-box;
+  width: var(--card-w);
+  border: 1px dashed var(--border-color);
+  border-radius: 4px;
+  padding: 0.15rem 0.3rem;
+  font-size: 0.7rem;
+  color: var(--muted);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The button row is only a possibility, so its placeholder reads fainter. */
+.tune-slot-buttons {
+  opacity: 0.6;
+}
+
+/* A live coordinate badge pinned to the card body's bottom-right corner, clear of
+   the title and button slot rows that flank it. */
 .tune-pos {
   position: absolute;
-  top: 0;
-  left: 0;
+  bottom: 0.25rem;
+  right: 0.25rem;
   font-size: 0.68rem;
   font-variant-numeric: tabular-nums;
   color: var(--accent);

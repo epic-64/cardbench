@@ -64,20 +64,31 @@ object FineTuneView:
         cls := "stack tune-draggable",
         cls("stack-row") := (spec.layout == Layout.Row),
         styleAttr := s"left:${spec.position.x}px;top:${spec.position.y}px",
-        stackLabel(spec),
-        stackBody(spec),
-        div(cls := "tune-pos", s"${spec.position.x}, ${spec.position.y}"),
+        titleSlot(spec),
+        // The card body carries the live coordinate badge, pinned to its bottom-right
+        // corner (where the play board's controls sit) so it clears both slot rows.
+        div(
+          cls := "stack-body",
+          stackBody(spec),
+          div(cls := "tune-pos", s"${spec.position.x}, ${spec.position.y}"),
+        ),
+        buttonsSlot,
         onPointerDown --> (e => startDrag(e)),
         onPointerMove --> (e => moveDrag(e)),
         onPointerUp --> (e => endDrag(e, spec.id)),
         onPointerCancel --> (_ => drag = None),
       )
 
-    def stackLabel(spec: StackSpec): Node =
-      val n = cardCount(spec)
-      if n > 1 then div(cls := "stack-label", s"${spec.label} ($n)".trim)
-      else if spec.label.nonEmpty then div(cls := "stack-label", spec.label)
-      else emptyNode
+    // Ghost boxes flanking the card, mirroring the rows a stack carries in play: the
+    // title above and the (potential) button row below. They keep a stack's full
+    // footprint visible while arranging, even when it has no label or buttons yet.
+    def titleSlot(spec: StackSpec): Element =
+      val n     = cardCount(spec)
+      val title = if n > 1 then s"${spec.label} ($n)".trim else spec.label
+      div(cls := "tune-slot tune-slot-title", title)
+
+    def buttonsSlot: Element =
+      div(cls := "tune-slot tune-slot-buttons", "buttons")
 
     def stackBody(spec: StackSpec): Element =
       val cards = expand(spec)
@@ -176,17 +187,19 @@ object FineTuneView:
     (math.max(1200, right + 200), math.max(700, bottom + 200))
 
   // A stack's pixel footprint, mirroring the play board: card dimensions match the
-  // --card-w / --card-h / row gap in engine.css, plus room for the label above.
-  private val cardW   = 130
-  private val cardH   = 180
-  private val rowGap  = 8
-  private val labelH  = 28
+  // --card-w / --card-h / row gap in engine.css, plus the title and button slot
+  // rows that flank the card and the gaps between all three.
+  private val cardW    = 130
+  private val cardH    = 180
+  private val rowGap   = 8
+  private val slotH    = 24 // a title / button indicator row
+  private val stackGap = 8  // the .stack flex gap between rows (0.5rem)
   private def footprint(spec: StackSpec): (Int, Int) =
     val n = math.max(1, cardCount(spec))
     val w = spec.layout match
       case Layout.Row  => n * cardW + (n - 1) * rowGap
       case Layout.Pile => cardW + 6 // the layered-deck shadow offset
-    (w, labelH + cardH)
+    (w, slotH + stackGap + cardH + stackGap + slotH)
 
   private def expand(spec: StackSpec): List[CardDefId] =
     spec.contents.flatMap(s => List.fill(s.count)(s.card))
