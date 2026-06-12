@@ -6,11 +6,13 @@
   --card-radius: 8px;
 }
 
-/* The host #app already carries .app-container's padding (one --gap all round),
-   so the game fills the viewport minus that gap and adds none of its own. */
+/* The board fills whatever the play screen gives it: the play screen is a flex
+   column (toolbar + game), so the game flexes to take the rest. `min-height:0`
+   lets it shrink within the flex parent instead of overflowing. */
 .game {
   width: 100%;
-  height: calc(100vh - 2 * var(--gap));
+  flex: 1;
+  min-height: 0;
 }
 
 /* Free-form board: the fixed viewport. Stacks live in `.world` inside it, which

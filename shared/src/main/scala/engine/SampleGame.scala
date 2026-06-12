@@ -151,3 +151,9 @@ object SampleGame:
       ),
     ),
   )
+
+  /** The whole sample bundled as one definition — the seed game the library
+    * starts from on a fresh browser, and the template "New game" clones.
+    */
+  val definition: GameDefinition =
+    GameDefinition("sample", "Sample: Dev Deck", catalog, rulebook, setup)
