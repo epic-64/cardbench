@@ -38,14 +38,26 @@ object EditorView:
 
     def cardRow(i: Int): Element =
       val c = draft.now().catalog.cards(i)
+      // The accent bar tracks the card's colour live as it is edited.
+      val colorSig = draft.signal.map(_.catalog.cards.lift(i).fold(c.color)(_.color)).distinct
       div(
-        cls := "editor-row",
-        textField("Id", c.id.value, v => updateCard(i)(_.copy(id = CardDefId(v)))),
-        textField("Title", c.title, v => updateCard(i)(_.copy(title = v))),
-        colorField("Color", c.color, v => updateCard(i)(_.copy(color = v))),
-        textAreaField("Description", c.description, v => updateCard(i)(_.copy(description = v))),
-        duplicateButton(() => setCards(cs => cs.lift(i).fold(cs)(c => cs.patch(i + 1, List(c.copy(id = CardDefId(s"${c.id.value}-copy"))), 0)))),
-        removeButton(() => setCards(cs => cs.patch(i, Nil, 1))),
+        cls := "editor-card",
+        div(cls := "editor-card-bar", backgroundColor <-- colorSig),
+        div(
+          cls := "editor-card-body",
+          textField("Id", c.id.value, v => updateCard(i)(_.copy(id = CardDefId(v)))),
+          textField("Title", c.title, v => updateCard(i)(_.copy(title = v))),
+          textAreaField("Description", c.description, v => updateCard(i)(_.copy(description = v))),
+          div(
+            cls := "editor-card-row",
+            colorField("Color", c.color, v => updateCard(i)(_.copy(color = v))),
+            div(
+              cls := "editor-card-actions",
+              duplicateButton(() => setCards(cs => cs.lift(i).fold(cs)(c => cs.patch(i + 1, List(c.copy(id = CardDefId(s"${c.id.value}-copy"))), 0)))),
+              removeButton(() => setCards(cs => cs.patch(i, Nil, 1))),
+            ),
+          ),
+        ),
       )
 
     val cardsSection = section(
@@ -54,6 +66,7 @@ object EditorView:
       () => setCards(_ :+ CardDef(CardDefId("new-card"), "#888888", "New Card", "")),
       draft.signal.map(_.catalog.cards.size),
       cardRow,
+      rowsClass = "editor-cards-grid",
     )
 
     // ── rulebook ─────────────────────────────────────────────────────────────
@@ -235,11 +248,12 @@ object EditorView:
     onAdd: () => Unit,
     count: Signal[Int],
     renderRow: Int => Element,
+    rowsClass: String = "editor-rows",
   ): Element =
     div(
       cls := "editor-section",
       div(cls := "editor-section-head", h2(title), addButton(addLabel, onAdd)),
-      div(cls := "editor-rows", children <-- indexed(count, renderRow)),
+      div(cls := rowsClass, children <-- indexed(count, renderRow)),
     )
 
   // The current row count, deduplicated, expanded into one element per index.
