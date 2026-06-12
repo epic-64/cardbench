@@ -161,11 +161,13 @@ object GameView:
         onDragOver --> (e => e.preventDefault()),
         onDrop --> (e => onStackDrop(e, stack)),
         labelView(stack),
-        body,
+        // The card(s) and the default controls share a relative wrapper so the
+        // controls pin to the leftmost card's bottom-right corner — not the bottom
+        // of the buttons row below, nor (for a horizontal stack) the rightmost card.
+        div(cls := "stack-body", body, controls),
         // Authored buttons sit below the card, one per row, so they never cover
         // its title or text.
         stackButtons(stack),
-        controls,
       )
 
     // The count badge is only meaningful for a real pile; a lone card shows just
@@ -329,7 +331,7 @@ object GameView:
           if !animating then
             e.preventDefault()
             val handle  = e.currentTarget.asInstanceOf[dom.Element]
-            val stackEl = handle.parentNode.parentNode.asInstanceOf[dom.html.Element]
+            val stackEl = handle.closest(".stack").asInstanceOf[dom.html.Element]
             val grab    = boardPoint(e.clientX, e.clientY)
             // setPointerCapture keeps move/up events on the handle once the cursor
             // leaves it; it's missing from this scala-js-dom facade, so call it raw.
