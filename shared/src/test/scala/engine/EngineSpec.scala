@@ -300,6 +300,23 @@ class EngineSpec extends AnyWordSpec with Matchers:
         ),
       )
 
+  "Engine.dealSteps" should:
+
+    "script one move per card off the top of the source onto the target" in:
+      Engine.dealSteps(Engine.setup(catalog, rulebook, setup), deck, discard, 2) shouldBe Right(
+        List(
+          Step.Move(CardId("deck#0"), discard),
+          Step.Move(CardId("deck#1"), discard),
+        ),
+      )
+
+    "abort when the source runs dry before the count is met" in:
+      // The 12-card deck is drained on the 12th draw and (not being persistent)
+      // ceases to exist, so the 13th has no stack left to draw from.
+      Engine.dealSteps(Engine.setup(catalog, rulebook, setup), deck, discard, 13) shouldBe Left(
+        EngineError.UnknownStack(deck),
+      )
+
   "JSON codecs" should:
 
     "round-trip a catalog unchanged" in:

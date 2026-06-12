@@ -85,6 +85,14 @@ object Engine:
   def dropSteps(state: GameState, card: CardId, onto: StackId): Either[EngineError, List[Step]] =
     resolveMove(state, card, onto, TargetFacing.Keep).map(_._2)
 
+  /** The script a stack button runs: deal `count` cards from the top of `from`
+    * onto `to`, each relocation cascading through the rules exactly like a drop.
+    * All-or-nothing via `Either` — dealing more cards than `from` holds aborts
+    * before a single step escapes.
+    */
+  def dealSteps(state: GameState, from: StackId, to: StackId, count: Int): Either[EngineError, List[Step]] =
+    runDeal(state, Effect.Deal(from, to, count)).map(_._2)
+
   /** Flip a single card between Up and Down; nothing else changes. */
   def flip(state: GameState, card: CardId): Either[EngineError, GameState] =
     findCard(state, card).toRight(UnknownCard(card)).map: _ =>

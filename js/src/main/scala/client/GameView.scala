@@ -161,7 +161,9 @@ object GameView:
         onDragOver --> (e => e.preventDefault()),
         onDrop --> (e => onStackDrop(e, stack)),
         labelView(stack),
-        body,
+        // The card and its authored buttons share a relative wrapper so the buttons
+        // pin to the card's top-left corner regardless of the label above.
+        div(cls := "stack-card-wrap", body, stackButtons(stack)),
         controls,
       )
 
@@ -198,6 +200,31 @@ object GameView:
             state.update(s => Engine.shuffle(s, stack.id, System.currentTimeMillis()).getOrElse(s))
         },
       )
+
+    // Authored shortcuts bound to this stack: each clicks through to a deal
+    // (drawing into the stack, or dealing out of it) that animates and fires rules
+    // just like a drag would. None render on loose stacks split off mid-play.
+    def stackButtons(stack: Stack): Node =
+      definition.setup.buttons.filter(_.stackId == stack.id) match
+        case Nil     => emptyNode
+        case buttons => div(cls := "stack-buttons", buttons.map(buttonControl(stack, _)))
+
+    def buttonControl(stack: Stack, b: StackButton): Element =
+      button(
+        cls := "stack-button",
+        b.label,
+        onClick --> (_ => runButton(stack, b)),
+      )
+
+    // A button deals between its own stack and the action's other stack: DealFrom
+    // draws into this stack, DealTo deals out of it. Ignored while a script runs;
+    // a deal from an empty source simply resolves to nothing.
+    def runButton(stack: Stack, b: StackButton): Unit =
+      if !animating then
+        val (from, to, count) = b.action match
+          case ButtonAction.DealFrom(src, c) => (src, stack.id, c)
+          case ButtonAction.DealTo(dst, c)   => (stack.id, dst, c)
+        Engine.dealSteps(state.now(), from, to, count).foreach(runScript(_))
 
     // ── animated drops ─────────────────────────────────────────────────────
     // A drop resolves as a script of atomic steps (Engine.dropSteps); we run it
