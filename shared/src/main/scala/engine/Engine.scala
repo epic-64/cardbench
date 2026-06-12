@@ -85,13 +85,15 @@ object Engine:
   def dropSteps(state: GameState, card: CardId, onto: StackId): Either[EngineError, List[Step]] =
     resolveMove(state, card, onto, TargetFacing.Keep).map(_._2)
 
-  /** The script a stack button runs: deal `count` cards from the top of `from`
-    * onto `to`, each relocation cascading through the rules exactly like a drop.
-    * All-or-nothing via `Either` — dealing more cards than `from` holds aborts
-    * before a single step escapes.
+  /** The script a stack button runs: deal *up to* `count` cards from the top of
+    * `from` onto `to`, each relocation cascading through the rules exactly like a
+    * drop. Dealing stops once `from` runs dry, so a button asking for more cards
+    * than the stack holds simply deals them all — a deal-20 button on a 5-card
+    * stack deals 5. Threaded through `Either` only for the per-card failures the
+    * cascade itself can raise.
     */
   def dealSteps(state: GameState, from: StackId, to: StackId, count: Int): Either[EngineError, List[Step]] =
-    runDeal(state, Effect.Deal(from, to, count)).map(_._2)
+    runDeal(state, Effect.Deal(from, to, count), lenient = true).map(_._2)
 
   /** Flip a single card between Up and Down; nothing else changes. */
   def flip(state: GameState, card: CardId): Either[EngineError, GameState] =
@@ -157,19 +159,27 @@ object Engine:
           case (s, steps) => runDeal(s, effect).map((s2, more) => (s2, steps ++ more))
 
   /** A `Deal` as `count` single relocations, each resolved (and so itself able to
-    * set off further reactions) by `resolveMove`. */
-  private def runDeal(state: GameState, effect: Effect): Either[EngineError, (GameState, List[Step])] =
+    * set off further reactions) by `resolveMove`. Strict by default: a rule effect
+    * that over-draws its source aborts the whole cascade (see `runEffects`). When
+    * `lenient` — the form a stack button runs — a dry source instead stops the
+    * deal early, dealing only what was there. */
+  private def runDeal(
+    state: GameState,
+    effect: Effect,
+    lenient: Boolean = false,
+  ): Either[EngineError, (GameState, List[Step])] =
     effect match
       case Effect.Deal(from, to, count, facing) =>
         List.fill(count)(()).foldLeft[Either[EngineError, (GameState, List[Step])]](Right((state, Nil))):
           (acc, _) =>
             acc.flatMap:
               case (s, steps) =>
-                for
-                  src <- find(s, from)
-                  top <- src.cards.headOption.toRight(EmptyStack(from))
-                  res <- resolveMove(s, top.id, to, facing)
-                yield (res._1, steps ++ res._2)
+                // The source may have vanished once its last card left (dropEmpty),
+                // so when lenient a missing or empty stack alike just stops the deal.
+                find(s, from).flatMap(_.cards.headOption.toRight(EmptyStack(from))) match
+                  case Left(_) if lenient  => Right((s, steps))
+                  case Left(err)           => Left(err)
+                  case Right(top)          => resolveMove(s, top.id, to, facing).map((s2, more) => (s2, steps ++ more))
 
   /** Run a script straight through, ignoring per-step errors the script's own
     * construction already ruled out. */
