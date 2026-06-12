@@ -31,7 +31,7 @@ object FineTuneView:
 
     def setPosition(id: StackId, pos: Position): Unit =
       draft.update: d =>
-        d.copy(setup = GameSetup(d.setup.stacks.map(s => if s.id == id then s.copy(position = pos) else s)))
+        d.copy(setup = d.setup.copy(stacks = d.setup.stacks.map(s => if s.id == id then s.copy(position = pos) else s)))
 
     // Round to the nearest grid line (when snapping is on), never below zero.
     def snapClamp(v: Double): Int =
