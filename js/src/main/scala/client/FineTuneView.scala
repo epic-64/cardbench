@@ -60,10 +60,14 @@ object FineTuneView:
     // holds more), a row spreads every card side by side. The whole stack is the
     // drag handle; a corner badge reads out its live position.
     def stackBox(spec: StackSpec): Element =
+      // The slot rows span the stack's declared area width (in cards), so the footprint
+      // shows how wide the zone is *expected* to be — independent of how many cards it
+      // actually holds.
+      val areaW = colsWidth(math.max(1, spec.areaWidth))
       div(
         cls := "stack tune-draggable",
         cls("stack-row") := (spec.layout == Layout.Row),
-        styleAttr := s"left:${spec.position.x}px;top:${spec.position.y}px",
+        styleAttr := s"left:${spec.position.x}px;top:${spec.position.y}px;--stack-area-w:${areaW}px",
         titleSlot(spec),
         // The card body carries the live coordinate badge, pinned to its bottom-right
         // corner (where the play board's controls sit) so it clears both slot rows.
@@ -92,14 +96,20 @@ object FineTuneView:
 
     def stackBody(spec: StackSpec): Element =
       val cards = expand(spec)
-      spec.layout match
+      val faces = spec.layout match
         case Layout.Pile =>
           cards.headOption match
-            case None      => div(cls := "card card-empty", "—")
-            case Some(top) => cardFace(top, spec.facing, stacked = cards.size > 1)
+            case None      => List(div(cls := "card card-empty", "—"))
+            case Some(top) => List(cardFace(top, spec.facing, stacked = cards.size > 1))
         case Layout.Row =>
-          if cards.isEmpty then div(cls := "card card-empty", "—")
-          else div(cls := "zone-row", cards.map(cardFace(_, spec.facing, stacked = false)))
+          if cards.isEmpty then List(div(cls := "card card-empty", "—"))
+          else cards.map(cardFace(_, spec.facing, stacked = false))
+      // Pad out to the declared area width with faint ghost cards so the expected
+      // span is easy to eyeball; real cards that overflow it are never dropped.
+      val ghosts = List.fill(math.max(0, spec.areaWidth - faces.size))(div(cls := "card card-ghost"))
+      faces ++ ghosts match
+        case one :: Nil => one
+        case many       => div(cls := "zone-row", many)
 
     // A face, dimensionally identical to a real card: a back when face-down, else
     // a colour-topped front with its title, so stacks stay tellable apart.
@@ -194,11 +204,17 @@ object FineTuneView:
   private val rowGap   = 8
   private val slotH    = 24 // a title / button indicator row
   private val stackGap = 8  // the .stack flex gap between rows (0.5rem)
+
+  // The pixel width of n cards laid side by side, matching the play board's row gap.
+  private def colsWidth(n: Int): Int = n * cardW + (n - 1) * rowGap
+
   private def footprint(spec: StackSpec): (Int, Int) =
-    val n = math.max(1, cardCount(spec))
-    val w = spec.layout match
-      case Layout.Row  => n * cardW + (n - 1) * rowGap
+    // The wider of the declared area and the cards actually present, so neither the
+    // expected zone nor an overflowing row gets clipped by the canvas extent.
+    val contentW = spec.layout match
+      case Layout.Row  => colsWidth(math.max(1, cardCount(spec)))
       case Layout.Pile => cardW + 6 // the layered-deck shadow offset
+    val w = math.max(colsWidth(math.max(1, spec.areaWidth)), contentW)
     (w, slotH + stackGap + cardH + stackGap + slotH)
 
   private def expand(spec: StackSpec): List[CardDefId] =

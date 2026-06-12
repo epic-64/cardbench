@@ -38,7 +38,16 @@ case class StackSpec(
   arrangement: Arrangement = Arrangement.Ordered, // how the spawned cards are arranged at setup
   persistent: Boolean = false,                    // an essential pile: kept on the table even at 0 cards
   layout: Layout = Layout.Pile,                   // how the stack is shown: a heap (Pile) or a row of cards
-) derives ReadWriter
+  width: Option[Int] = None,                      // expected area width in cards; a layout hint, see areaWidth
+) derives ReadWriter:
+  /** How many cards wide this stack's area is expected to be, used by the layout
+    * editor to size its footprint. A planning hint only — it never caps the card
+    * count. Defaults by layout when unset: a `Pile` reserves one card, a `Row` three.
+    */
+  def areaWidth: Int = width.getOrElse:
+    layout match
+      case Layout.Pile => 1
+      case Layout.Row  => 3
 
 /** What a stack button does when clicked. Each action deals cards between the
   * button's own stack and one other: `DealFrom` draws `count` cards *into* the
