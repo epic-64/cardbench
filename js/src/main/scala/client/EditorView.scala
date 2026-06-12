@@ -94,17 +94,25 @@ object EditorView:
             case s: Effect.Shuffle => r.effects.updated(j, g(s))
             case _                 => r.effects
           })
+      def setEffectKind(kind: String): Unit =
+        updateRule(i)(r => r.copy(effects = r.effects.lift(j).fold(r.effects)(e => r.effects.updated(j, withEffectKind(e, kind)))))
       def removeEffect(): Unit =
         updateRule(i)(r => r.copy(effects = r.effects.patch(j, Nil, 1)))
       def dealField(pick: Effect.Deal => String): Signal[String] =
         draft.signal.map(_.rulebook.rules.lift(i).flatMap(_.effects.lift(j)) match { case Some(d: Effect.Deal) => pick(d); case _ => "" }).distinct
       def shuffleField: Signal[String] =
         draft.signal.map(_.rulebook.rules.lift(i).flatMap(_.effects.lift(j)) match { case Some(s: Effect.Shuffle) => s.stack.value; case _ => "" }).distinct
-      draft.now().rulebook.rules(i).effects(j) match
+      val effect    = draft.now().rulebook.rules(i).effects(j)
+      // One type select per effect; picking another kind rewrites this slot. The
+      // type-specific fields follow. (The row rebuilds on a kind change — see
+      // `effectKinds` in `ruleRow` — so the right fields always show.)
+      val kindField = selectField("Effect", effectKindOptions, effectKind(effect), setEffectKind)
+      effect match
         case Effect.Deal(_, _, count, facing) =>
           div(
-            cls := "editor-subrow",
-            idSelectField("Deal from", stackIds, dealField(_.from.value), v => updateDeal(_.copy(from = StackId(v)))),
+            cls := "editor-effect",
+            kindField,
+            idSelectField("from", stackIds, dealField(_.from.value), v => updateDeal(_.copy(from = StackId(v)))),
             idSelectField("to", stackIds, dealField(_.to.value), v => updateDeal(_.copy(to = StackId(v)))),
             numberField("Count", count, n => updateDeal(_.copy(count = n))),
             selectField("Facing", targetFacingOptions, facing, f => updateDeal(_.copy(targetFacing = f))),
@@ -112,8 +120,9 @@ object EditorView:
           )
         case _: Effect.Shuffle =>
           div(
-            cls := "editor-subrow",
-            idSelectField("Shuffle stack", stackIds, shuffleField, v => updateShuffle(_.copy(stack = StackId(v)))),
+            cls := "editor-effect",
+            kindField,
+            idSelectField("Stack", stackIds, shuffleField, v => updateShuffle(_.copy(stack = StackId(v)))),
             removeButton(() => removeEffect()),
           )
 
@@ -122,23 +131,28 @@ object EditorView:
         draft.signal.map(_.rulebook.rules.lift(i).map(_.trigger) match { case Some(Trigger.Moved(c, _)) => c.value; case _ => "" }).distinct
       def triggerTo: Signal[String] =
         draft.signal.map(_.rulebook.rules.lift(i).map(_.trigger) match { case Some(Trigger.Moved(_, s)) => s.value; case _ => "" }).distinct
+      // Rebuild the effect rows when one is added, removed, *or* retyped: the signal
+      // keys off the list of effect kinds, not just its length, so switching a Deal
+      // to a Shuffle re-renders that row with the new effect's fields.
+      val effectKinds: Signal[List[String]] =
+        draft.signal.map(_.rulebook.rules.lift(i).fold(List.empty[String])(_.effects.map(effectKind))).distinct
       div(
-        cls := "editor-row editor-row-block",
+        cls := "editor-rule",
         div(
-          cls := "editor-row",
-          idSelectField("When card", cardIds, triggerCard, v => setTriggerCard(i, CardDefId(v))),
+          cls := "editor-rule-head",
+          span(cls := "rule-badge", "When"),
+          idSelectField("Card", cardIds, triggerCard, v => setTriggerCard(i, CardDefId(v))),
           idSelectField("lands on stack", stackIds, triggerTo, v => setTriggerTo(i, StackId(v))),
           removeButton(() => setRules(rs => rs.patch(i, Nil, 1))),
         ),
         div(
-          cls := "editor-subsection",
+          cls := "editor-rule-body",
           div(
-            cls := "editor-subsection-head",
-            span("Effects"),
-            addButton("+ Add deal", () => updateRule(i)(r => r.copy(effects = r.effects :+ Effect.Deal(StackId(""), StackId(""))))),
-            addButton("+ Add shuffle", () => updateRule(i)(r => r.copy(effects = r.effects :+ Effect.Shuffle(StackId(""))))),
+            cls := "editor-rule-effects-head",
+            span(cls := "rule-badge rule-badge-then", "Then"),
+            addButton("+ Add effect", () => updateRule(i)(r => r.copy(effects = r.effects :+ Effect.Deal(StackId(""), StackId(""))))),
           ),
-          div(cls := "editor-rows", children <-- indexed(draft.signal.map(_.rulebook.rules.lift(i).fold(0)(_.effects.size)), j => effectRow(i, j))),
+          div(cls := "editor-effects", children <-- effectKinds.map(kinds => kinds.indices.toList.map(j => effectRow(i, j)))),
         ),
       )
 
@@ -333,6 +347,20 @@ object EditorView:
   private val targetFacingOptions = List("Keep" -> TargetFacing.Keep, "Up" -> TargetFacing.Up, "Down" -> TargetFacing.Down)
   private val arrangementOptions  = List("Ordered" -> Arrangement.Ordered, "Shuffled" -> Arrangement.Shuffled)
   private val layoutOptions       = List("Pile" -> Layout.Pile, "Row" -> Layout.Row)
+
+  // An effect is a tagged choice too: a single "+ Add effect" button drops in a
+  // Deal, and a per-row type select swaps between the kinds, carrying a stack id
+  // across so retyping doesn't blank the row.
+  private val effectKindOptions = List("Deal" -> "deal", "Shuffle" -> "shuffle")
+
+  private def effectKind(e: Effect): String = e match
+    case _: Effect.Deal    => "deal"
+    case _: Effect.Shuffle => "shuffle"
+
+  private def withEffectKind(e: Effect, kind: String): Effect = (e, kind) match
+    case (d: Effect.Deal, "shuffle") => Effect.Shuffle(d.from)
+    case (s: Effect.Shuffle, "deal") => Effect.Deal(s.stack, StackId(""))
+    case (other, _)                  => other
 
   // A button's action is a tagged choice ("from"/"to") carrying a stack and a
   // count; these read and rebuild it field-by-field so a tab switch never loses
