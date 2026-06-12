@@ -247,6 +247,63 @@
   gap: var(--gap-sm);
 }
 
+/* Cards render as a responsive grid of tiles rather than stacked rows. */
+.editor-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--gap-sm);
+}
+
+.editor-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--field-bg);
+  border: var(--border);
+  border-radius: var(--card-radius);
+  overflow: hidden;
+  transition: border-color 0.15s;
+}
+
+.editor-card:hover {
+  border-color: var(--accent);
+}
+
+/* A live swatch of the card's colour across the top of its tile. */
+.editor-card-bar {
+  height: 6px;
+}
+
+.editor-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-sm);
+  padding: var(--gap-sm);
+}
+
+/* Inside a tile most fields fill the width so inputs line up cleanly. */
+.editor-card-body .field-input {
+  width: 100%;
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+/* The colour picker keeps its compact size and shares a row with the actions. */
+.editor-card-row {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--gap-sm);
+}
+
+.editor-card-row .field-color {
+  width: 3rem;
+}
+
+.editor-card-actions {
+  display: flex;
+  gap: var(--gap-sm);
+  margin-left: auto;
+}
+
 /* A row of fields; wraps on narrow screens rather than overflowing. */
 .editor-row {
   display: flex;
