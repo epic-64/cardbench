@@ -44,6 +44,7 @@ object EditorView:
         textField("Title", c.title, v => updateCard(i)(_.copy(title = v))),
         colorField("Color", c.color, v => updateCard(i)(_.copy(color = v))),
         textAreaField("Description", c.description, v => updateCard(i)(_.copy(description = v))),
+        duplicateButton(() => setCards(cs => cs.lift(i).fold(cs)(c => cs.patch(i + 1, List(c.copy(id = CardDefId(s"${c.id.value}-copy"))), 0)))),
         removeButton(() => setCards(cs => cs.patch(i, Nil, 1))),
       )
 
