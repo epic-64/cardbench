@@ -499,7 +499,9 @@
    while arranging, even when it has no label or buttons yet. */
 .tune-slot {
   box-sizing: border-box;
-  width: var(--card-w);
+  /* Spans the stack's declared area width (set per-stack), so the boxes show how
+     wide the zone is expected to be; falls back to a single card. */
+  width: var(--stack-area-w, var(--card-w));
   border: 1px dashed var(--border-color);
   border-radius: 4px;
   padding: 0.15rem 0.3rem;
@@ -514,6 +516,16 @@
 /* The button row is only a possibility, so its placeholder reads fainter. */
 .tune-slot-buttons {
   opacity: 0.6;
+}
+
+/* A faint, card-sized placeholder shown in the layout view to pad a stack out to
+   its declared area width, so its expected span is easy to judge at a glance. The
+   base .card border is near-invisible (6% white), so give the ghost a clearly
+   visible dashed outline of its own rather than inheriting it. */
+.card-ghost {
+  border: 1px dashed var(--muted);
+  background: transparent;
+  opacity: 0.45;
 }
 
 /* A live coordinate badge pinned to the card body's bottom-right corner, clear of

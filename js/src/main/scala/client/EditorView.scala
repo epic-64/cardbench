@@ -178,6 +178,7 @@ object EditorView:
           selectField("Facing", facingOptions, s.facing, f => updateStack(i)(_.copy(facing = f))),
           selectField("Arrangement", arrangementOptions, s.arrangement, a => updateStack(i)(_.copy(arrangement = a))),
           selectField("Layout", layoutOptions, s.layout, l => updateStack(i)(_.copy(layout = l))),
+          numberField("Width", s.areaWidth, n => updateStack(i)(_.copy(width = Some(n)))),
           checkboxField("Persistent", s.persistent, b => updateStack(i)(_.copy(persistent = b))),
         ),
         div(
