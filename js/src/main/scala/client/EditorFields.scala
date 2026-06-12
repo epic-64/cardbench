@@ -112,5 +112,8 @@ object EditorFields:
   def removeButton(onRemove: () => Unit): Element =
     button(cls := "btn btn-danger btn-icon", title := "Remove", "✕", onClick --> (_ => onRemove()))
 
+  def duplicateButton(onDuplicate: () => Unit): Element =
+    button(cls := "btn btn-icon", title := "Duplicate", "⧉", onClick --> (_ => onDuplicate()))
+
   private def field(name: String, control: Element): Element =
     label(cls := "field", span(cls := "field-label", name), control)
