@@ -237,10 +237,13 @@ object GameView:
     def flipReveal(card: CardId): Unit =
       cardEl(card).foreach(_.classList.add("card-flipping"))
 
-    def animateStep(step: Step, done: () => Unit): Unit =
+    // `fromOverride` lets a drop start the dropped card's glide from where the
+    // user released it (the floating ghost) instead of its origin — otherwise the
+    // card snaps back to its source and slides forward, a move the drag already made.
+    def animateStep(step: Step, fromOverride: Option[dom.DOMRect], done: () => Unit): Unit =
       step match
         case Step.Move(card, to) =>
-          val from = cardEl(card).map(_.getBoundingClientRect())
+          val from = fromOverride.orElse(cardEl(card).map(_.getBoundingClientRect()))
           state.update(s => Engine.move(s, card, to).getOrElse(s))
           slide(card, from)
           dom.window.setTimeout(() => done(), moveAnimMs)
@@ -249,25 +252,30 @@ object GameView:
           flipReveal(card)
           dom.window.setTimeout(() => done(), flipAnimMs)
 
-    def runScript(steps: List[Step]): Unit =
-      def loop(remaining: List[Step]): Unit =
+    // `firstFrom` overrides only the first step's glide origin (the dropped card);
+    // every reaction step that follows glides from its own real position.
+    def runScript(steps: List[Step], firstFrom: Option[dom.DOMRect] = None): Unit =
+      def loop(remaining: List[Step], fromOverride: Option[dom.DOMRect]): Unit =
         remaining match
           case Nil          => animating = false
-          case step :: rest => animateStep(step, () => loop(rest))
+          case step :: rest => animateStep(step, fromOverride, () => loop(rest, None))
       animating = true
-      loop(steps)
+      loop(steps, firstFrom)
 
     // Drop a card onto a stack: relocate it and play out whatever reactions the
     // rules fire, as an animated step script. The card just merging on top with no
     // rule to react is simply the one-step case. A drop that resolves to nothing
     // (Left) is ignored.
-    def dropAnimated(card: CardId, onto: StackId): Unit =
-      Engine.dropSteps(state.now(), card, onto).foreach(runScript)
+    def dropAnimated(card: CardId, onto: StackId, from: Option[dom.DOMRect]): Unit =
+      Engine.dropSteps(state.now(), card, onto).foreach(runScript(_, from))
 
     // A card dropped onto a stack relocates onto it (and the rules react). Dropped
     // onto its own single-card stack it just repositions instead — so a lone card
     // can be nudged anywhere, not only by dragging it clear of the stack's bounds.
     def onStackDrop(e: dom.DragEvent, stack: Stack): Unit =
+      // Grab the floating ghost's screen position before tearing it down, so the
+      // dropped card can glide from where it was released rather than its origin.
+      val released = dragGhost.map((g, _, _) => g.getBoundingClientRect())
       clearDragGhost()
       if animating then ()
       else
@@ -279,7 +287,7 @@ object GameView:
           dragCard = None
           if selfLone then
             state.update(s => Engine.moveStack(s, stack.id, Position(clamp(p.x - c.offX), clamp(p.y - c.offY))).getOrElse(s))
-          else dropAnimated(c.id, stack.id)
+          else dropAnimated(c.id, stack.id, released)
 
     // Pointer-driven, so movement is pixel-exact and starts immediately. We move
     // the live element directly during the drag (no re-render churn that would
