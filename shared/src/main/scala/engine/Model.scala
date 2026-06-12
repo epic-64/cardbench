@@ -44,13 +44,15 @@ object Facing:
     },
   )
 
-/** A consequence of playing a card. The vocabulary is deliberately tiny: the
-  * single primitive `Deal` moves `count` cards from the top of one stack onto
-  * the top of another, flipping each face-up if `reveal` is set. Anything richer
-  * is composed from more of these.
+/** A consequence of playing a card — a single move event. The vocabulary is one
+  * primitive: `Deal` moves `count` cards (default 1) from the top of one stack
+  * onto the top of another, flipping each face-up if `reveal` is set. Everything
+  * richer composes from more of these, including where a *played* card ends up:
+  * since playing first drops the card on the play stack, sending it onward (e.g.
+  * to a discard) is just a `Deal` out of that stack.
   */
 enum Effect derives ReadWriter:
-  case Deal(from: StackId, to: StackId, count: Int, reveal: Boolean = false)
+  case Deal(from: StackId, to: StackId, count: Int = 1, reveal: Boolean = false)
 
 /** One atomic, animatable move in a play's resolution: relocate a single card,
   * or flip one. `Engine.playSteps` emits these in order so the shell can animate
@@ -60,18 +62,16 @@ enum Step:
   case Move(card: CardId, to: StackId)
   case Flip(card: CardId)
 
-/** Authored content — the "front" of a card. `effects` are resolved, in order,
-  * when the card is played (see `Engine.play`); a card with none is inert.
-  * `playsTo` is the pile the card lands in after being played — authored data the
-  * shell hands to `play` as its `to`; `None` means it stays in the play zone.
+/** Authored content — the "front" of a card. Pure presentation: what a card
+  * looks like and reads as. A card's *behaviour* when played lives entirely
+  * apart, in the `Rulebook` (see `CardRule`), so look and rules evolve
+  * independently.
   */
 case class CardDef(
   id: CardDefId,
   color: String,
   title: String,
   description: String,
-  effects: List[Effect] = Nil,
-  playsTo: Option[StackId] = None,
 ) derives ReadWriter
 
 /** A physical card on the table: one instance of a definition. */
@@ -119,8 +119,15 @@ case class Stack(
   layout: Layout = Layout.Pile,
 )
 
-/** The whole table: the single source of truth. */
-case class GameState(catalog: Map[CardDefId, CardDef], stacks: List[Stack])
+/** The whole table: the single source of truth. `catalog` is the registry of
+  * card kinds for rendering; `rules` is the resolved effect system, addressing
+  * each kind's play behaviour by id. A kind absent from `rules` is inert.
+  */
+case class GameState(
+  catalog: Map[CardDefId, CardDef],
+  rules: Map[CardDefId, CardRule],
+  stacks: List[Stack],
+)
 
 /** A move that could not be applied. Verbs return these instead of throwing. */
 enum EngineError:

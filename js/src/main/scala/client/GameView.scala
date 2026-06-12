@@ -25,7 +25,7 @@ object GameView:
   private final case class StackDrag(el: dom.html.Element, grabX: Int, grabY: Int)
 
   def view(): Element =
-    val initial = Engine.setup(SampleGame.catalog, SampleGame.setup, System.currentTimeMillis())
+    val initial = Engine.setup(SampleGame.catalog, SampleGame.rulebook, SampleGame.setup, System.currentTimeMillis())
     val state   = Var(initial)
     val catalog = initial.catalog
 
@@ -113,16 +113,6 @@ object GameView:
         moveHandle(stack),
       )
 
-    // Where a played card lands: its def's authored `playsTo`, or the play zone
-    // itself if it has none (so the card just stays in play).
-    def destinationOf(s: GameState, card: CardId, fallback: StackId): StackId =
-      s.stacks
-        .flatMap(_.cards)
-        .find(_.id == card)
-        .flatMap(inst => catalog.get(inst.defId))
-        .flatMap(_.playsTo)
-        .getOrElse(fallback)
-
     // ── animated play ──────────────────────────────────────────────────────
     // A play resolves as a script of atomic steps (Engine.playSteps); we run it
     // one step at a time so each move/flip can animate, and ignore drops while a
@@ -169,17 +159,11 @@ object GameView:
       animating = true
       loop(steps)
 
-    // Build the play's script — effects, then the card to its post-play home —
-    // prefixed by the card sliding into the play zone itself, so it visibly lands
-    // there before resolving. A play with nothing to do (Left) is simply dropped.
+    // Build the play's script: the card sliding into the play zone, then its
+    // effects resolving on top (one of which may move it on to its post-play
+    // home). A play with nothing to do (Left) is simply dropped.
     def playAnimated(card: CardId): Unit =
-      val s0   = state.now()
-      val dest = destinationOf(s0, card, SampleGame.playZone)
-      Engine.playSteps(s0, card, dest).foreach: effectSteps =>
-        val script =
-          if dest == SampleGame.playZone then effectSteps
-          else Step.Move(card, SampleGame.playZone) :: effectSteps
-        runScript(script)
+      Engine.playSteps(state.now(), card, SampleGame.playZone).foreach(runScript)
 
     // A card dropped onto a *different* stack merges on top. Dropped onto its own
     // single-card stack it just repositions — so a lone card can be nudged
