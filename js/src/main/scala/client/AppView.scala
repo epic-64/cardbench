@@ -14,6 +14,7 @@ object AppView:
     case Library
     case Play(definition: GameDefinition)
     case Edit(definition: GameDefinition)
+    case FineTune(definition: GameDefinition)
 
   def view(): Element =
     val library = Var(GameStore.loadOrSeed())
@@ -27,11 +28,20 @@ object AppView:
             library,
             onPlay = d => screen.set(Screen.Play(d)),
             onEdit = d => screen.set(Screen.Edit(d)),
+            onFineTune = d => screen.set(Screen.FineTune(d)),
           )
         case Screen.Play(d) =>
           playScreen(d, () => screen.set(Screen.Library))
         case Screen.Edit(d) =>
           EditorView.view(
+            d,
+            onSave = saved =>
+              library.set(GameStore.save(saved))
+              screen.set(Screen.Library),
+            onCancel = () => screen.set(Screen.Library),
+          )
+        case Screen.FineTune(d) =>
+          FineTuneView.view(
             d,
             onSave = saved =>
               library.set(GameStore.save(saved))
