@@ -267,7 +267,7 @@ object GameView:
         val (from, to, count) = b.action match
           case ButtonAction.DealFrom(src, c) => (src, stack.id, c)
           case ButtonAction.DealTo(dst, c)   => (stack.id, dst, c)
-        Engine.dealSteps(state.now(), from, to, count).foreach(runScript(_))
+        Engine.dealSteps(state.now(), from, to, count, System.currentTimeMillis()).foreach(runScript(_))
 
     // ── animated drops ─────────────────────────────────────────────────────
     // A drop resolves as a script of atomic steps (Engine.dropSteps); we run it
@@ -321,6 +321,13 @@ object GameView:
           state.update(s => Engine.flip(s, card).getOrElse(s))
           flipReveal(card)
           dom.window.setTimeout(() => done(), flipAnimMs)
+        case Step.Shuffle(stack, seed) =>
+          // Mark the stack so it re-renders with the shake class on, reorder it to
+          // the seed the cascade rolled, then clear the mark and continue.
+          shuffling.set(Some(stack))
+          state.update(s => Engine.shuffle(s, stack, seed).getOrElse(s))
+          dom.window.setTimeout(() => shuffling.set(None), shuffleAnimMs)
+          dom.window.setTimeout(() => done(), shuffleAnimMs)
 
     // `firstFrom` overrides only the first step's glide origin (the dropped card);
     // every reaction step that follows glides from its own real position.
@@ -337,7 +344,7 @@ object GameView:
     // rule to react is simply the one-step case. A drop that resolves to nothing
     // (Left) is ignored.
     def dropAnimated(card: CardId, onto: StackId, from: Option[dom.DOMRect]): Unit =
-      Engine.dropSteps(state.now(), card, onto).foreach(runScript(_, from))
+      Engine.dropSteps(state.now(), card, onto, System.currentTimeMillis()).foreach(runScript(_, from))
 
     // A card dropped onto a stack relocates onto it (and the rules react). Dropped
     // onto its own single-card stack it just repositions instead — so a lone card
