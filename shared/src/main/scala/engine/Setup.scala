@@ -40,8 +40,24 @@ case class StackSpec(
   layout: Layout = Layout.Pile,                   // how the stack is shown: a heap (Pile) or a row of cards
 ) derives ReadWriter
 
-/** The starting table. */
-case class GameSetup(stacks: List[StackSpec]) derives ReadWriter
+/** What a stack button does when clicked. Each action deals cards between the
+  * button's own stack and one other: `DealFrom` draws `count` cards *into* the
+  * button's stack from `stack`; `DealTo` deals `count` cards *out of* the
+  * button's stack onto `stack`. A "draw" button on a hand is a `DealFrom` its
+  * deck; a "discard" button is a `DealTo` the discard pile.
+  */
+enum ButtonAction derives ReadWriter:
+  case DealFrom(stack: StackId, count: Int = 1)
+  case DealTo(stack: StackId, count: Int = 1)
+
+/** A clickable control bound to a stack: a labelled shortcut for a deal that the
+  * player would otherwise do by dragging. `stackId` is the stack it sits on; the
+  * `action` says which other stack it deals with and in which direction.
+  */
+case class StackButton(stackId: StackId, label: String, action: ButtonAction) derives ReadWriter
+
+/** The starting table: the authored stacks plus any stack buttons over them. */
+case class GameSetup(stacks: List[StackSpec], buttons: List[StackButton] = Nil) derives ReadWriter
 
 /** What cards exist, for rendering. */
 case class CardCatalog(cards: List[CardDef]) derives ReadWriter

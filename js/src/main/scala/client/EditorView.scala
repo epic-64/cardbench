@@ -130,7 +130,7 @@ object EditorView:
 
     // ── setup (stacks) ─────────────────────────────────────────────────────────
     def setStacks(f: List[StackSpec] => List[StackSpec]): Unit =
-      draft.update(d => d.copy(setup = GameSetup(f(d.setup.stacks))))
+      draft.update(d => d.copy(setup = d.setup.copy(stacks = f(d.setup.stacks))))
     def updateStack(i: Int)(f: StackSpec => StackSpec): Unit =
       setStacks(ss => ss.lift(i).fold(ss)(s => ss.updated(i, f(s))))
 
@@ -180,6 +180,36 @@ object EditorView:
       () => setStacks(_ :+ StackSpec(StackId("new-stack"), "New Stack", Position(0, 0), Facing.Down, Nil)),
       draft.signal.map(_.setup.stacks.size),
       stackRow,
+    )
+
+    // ── stack buttons ───────────────────────────────────────────────────────
+    def setButtons(f: List[StackButton] => List[StackButton]): Unit =
+      draft.update(d => d.copy(setup = d.setup.copy(buttons = f(d.setup.buttons))))
+    def updateButton(i: Int)(f: StackButton => StackButton): Unit =
+      setButtons(bs => bs.lift(i).fold(bs)(b => bs.updated(i, f(b))))
+
+    def buttonRow(i: Int): Element =
+      val b = draft.now().setup.buttons(i)
+      def onStack: Signal[String] =
+        draft.signal.map(_.setup.buttons.lift(i).fold("")(_.stackId.value)).distinct
+      def actionStackSig: Signal[String] =
+        draft.signal.map(_.setup.buttons.lift(i).map(_.action).fold("")(actionStack(_).value)).distinct
+      div(
+        cls := "editor-row",
+        idSelectField("On stack", stackIds, onStack, v => updateButton(i)(_.copy(stackId = StackId(v)))),
+        textField("Label", b.label, v => updateButton(i)(_.copy(label = v))),
+        selectField("Action", buttonActionOptions, actionKind(b.action), k => updateButton(i)(bn => bn.copy(action = withKind(bn.action, k)))),
+        idSelectField("Other stack", stackIds, actionStackSig, v => updateButton(i)(bn => bn.copy(action = withStack(bn.action, StackId(v))))),
+        numberField("Count", actionCount(b.action), n => updateButton(i)(bn => bn.copy(action = withCount(bn.action, n)))),
+        removeButton(() => setButtons(bs => bs.patch(i, Nil, 1))),
+      )
+
+    val buttonsSection = section(
+      "Buttons",
+      "+ Add button",
+      () => setButtons(_ :+ StackButton(StackId(""), "Button", ButtonAction.DealFrom(StackId("")))),
+      draft.signal.map(_.setup.buttons.size),
+      buttonRow,
     )
 
     def finalised(): GameDefinition =
@@ -232,10 +262,12 @@ object EditorView:
           cls := "editor-tabs",
           tabButton("cards", "Cards"),
           tabButton("stacks", "Stacks"),
+          tabButton("buttons", "Buttons"),
           tabButton("rules", "Rules"),
         ),
         tabPanel("cards", cardsSection),
         tabPanel("stacks", stacksSection),
+        tabPanel("buttons", buttonsSection),
         tabPanel("rules", rulesSection),
       ),
     )
@@ -264,3 +296,27 @@ object EditorView:
   private val targetFacingOptions = List("Keep" -> TargetFacing.Keep, "Up" -> TargetFacing.Up, "Down" -> TargetFacing.Down)
   private val arrangementOptions  = List("Ordered" -> Arrangement.Ordered, "Shuffled" -> Arrangement.Shuffled)
   private val layoutOptions       = List("Pile" -> Layout.Pile, "Row" -> Layout.Row)
+
+  // A button's action is a tagged choice ("from"/"to") carrying a stack and a
+  // count; these read and rebuild it field-by-field so a tab switch never loses
+  // the other half of the value.
+  private val buttonActionOptions = List("Deal from" -> "from", "Deal to" -> "to")
+
+  private def actionKind(a: ButtonAction): String = a match
+    case _: ButtonAction.DealFrom => "from"
+    case _: ButtonAction.DealTo   => "to"
+  private def actionStack(a: ButtonAction): StackId = a match
+    case ButtonAction.DealFrom(s, _) => s
+    case ButtonAction.DealTo(s, _)   => s
+  private def actionCount(a: ButtonAction): Int = a match
+    case ButtonAction.DealFrom(_, c) => c
+    case ButtonAction.DealTo(_, c)   => c
+  private def withKind(a: ButtonAction, kind: String): ButtonAction = kind match
+    case "from" => ButtonAction.DealFrom(actionStack(a), actionCount(a))
+    case _      => ButtonAction.DealTo(actionStack(a), actionCount(a))
+  private def withStack(a: ButtonAction, s: StackId): ButtonAction = a match
+    case d: ButtonAction.DealFrom => d.copy(stack = s)
+    case d: ButtonAction.DealTo   => d.copy(stack = s)
+  private def withCount(a: ButtonAction, c: Int): ButtonAction = a match
+    case d: ButtonAction.DealFrom => d.copy(count = c)
+    case d: ButtonAction.DealTo   => d.copy(count = c)
