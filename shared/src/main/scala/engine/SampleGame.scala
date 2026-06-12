@@ -140,6 +140,7 @@ object SampleGame:
         Facing.Up,
         Nil,
         persistent = true,
+        layout = Layout.Row,
       ),
       // The player's hand: a face-up row of cards you drag onto the play zone. A
       // small opening hand so there's something to play right away.
