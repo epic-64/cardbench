@@ -223,6 +223,15 @@ object GameView:
           el.getBoundingClientRect() // force the start offset to register before transitioning
           el.style.transition = s"transform ${moveAnimMs}ms ease"
           el.style.transform = "translate(0px, 0px)"
+          // The lift is only for the glide; clear it afterwards or the card keeps
+          // a z-index of 10 and covers the stack's controls (move handle, shuffle).
+          dom.window.setTimeout(
+            () =>
+              el.style.zIndex = ""
+              el.style.transition = ""
+              el.style.transform = "",
+            moveAnimMs,
+          )
         case _ => ()
 
     def flipReveal(card: CardId): Unit =
