@@ -113,13 +113,13 @@ case class CardDef(
   corners: CardCorners = CardCorners(),
 ) derives ReadWriter
 
-/** The four optional corner slots of a card front, each free text — typically a
-  * single emoji, a cost, or a count. What each slot reads is authored per card; how
+/** The optional corner slots of a card front, each free text — typically a single
+  * emoji, a cost, or a count. The top-left corner is reserved for the title, so only
+  * the other three corners are slots. What each slot reads is authored per card; how
   * the slots *look* is shared across the game (see `CornerStyle`). An empty slot
   * draws nothing.
   */
 case class CardCorners(
-  topLeft: String = "",
   topRight: String = "",
   bottomLeft: String = "",
   bottomRight: String = "",

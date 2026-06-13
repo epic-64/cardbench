@@ -171,12 +171,15 @@
 .card-title {
   flex: 0 0 auto;
   overflow: hidden;
-  /* Clear the two top corner slots so the title sits centred between them. */
-  padding: 0 var(--corner-clear);
-  text-align: center;
   font-weight: 600;
   /* Sized by the layout, in em so it tracks the in-game text-size control. */
   font-size: var(--title-font, 1em);
+}
+
+/* Added only when the top-right corner slot is filled, so the title stops short of
+   it instead of running underneath. */
+.card-title-clear {
+  padding-right: var(--corner-clear);
 }
 
 .card-desc {
@@ -221,7 +224,6 @@
   color: var(--corner-bg, var(--surface));
 }
 
-.card-corner-tl { top: var(--corner-inset); left: var(--corner-inset); }
 .card-corner-tr { top: var(--corner-inset); right: var(--corner-inset); }
 .card-corner-bl { bottom: var(--corner-inset); left: var(--corner-inset); }
 .card-corner-br { bottom: var(--corner-inset); right: var(--corner-inset); }
