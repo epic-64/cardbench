@@ -248,17 +248,39 @@ object EditorView:
         ),
         div(
           cls := "editor-row",
-          numberField("X", s.position.x, n => updateStack(i)(st => st.copy(position = st.position.copy(x = n)))),
-          numberField("Y", s.position.y, n => updateStack(i)(st => st.copy(position = st.position.copy(y = n)))),
           selectField("Facing", facingOptions, s.facing, f => updateStack(i)(_.copy(facing = f))),
           selectField("Arrangement", arrangementOptions, s.arrangement, a => updateStack(i)(_.copy(arrangement = a))),
           selectField("Layout", layoutOptions, s.layout, l => updateStack(i)(_.copy(layout = l))),
           numberField("Width", s.areaWidth, n => updateStack(i)(_.copy(width = Some(n)))),
-          checkboxField("Persistent", s.persistent, b => updateStack(i)(_.copy(persistent = b))),
+        ),
+        contentsSubsection(i),
+      )
+
+    // The contents are summarised by default — a count of distinct cards and of
+    // total cards — and the per-card rows stay hidden behind a toggle so the stack
+    // list reads as a compact overview until you choose to edit the cards.
+    def contentsSubsection(i: Int): Element =
+      val shown = Var(false)
+      // Recomputed only when the contents actually change, so typing elsewhere in
+      // the stack never refreshes the summary line.
+      val summary = draft.signal
+        .map(_.setup.stacks.lift(i).fold(List.empty[SpawnSpec])(_.contents))
+        .map(cs => (cs.map(_.card.value).distinct.size, cs.map(_.count).sum))
+        .distinct
+      div(
+        cls := "editor-subsection",
+        div(
+          cls := "editor-subsection-head",
+          span(child.text <-- summary.map((unique, total) => s"Contents — $unique unique, $total total")),
+          button(
+            cls := "btn btn-add",
+            child.text <-- shown.signal.map(s => if s then "Hide cards" else "Edit cards"),
+            onClick --> (_ => shown.update(!_)),
+          ),
         ),
         div(
-          cls := "editor-subsection",
-          div(cls := "editor-subsection-head", span("Contents"), addButton("+ Add cards", () => updateStack(i)(s => s.copy(contents = s.contents :+ SpawnSpec(CardDefId(""), 1))))),
+          display <-- shown.signal.map(s => if s then "block" else "none"),
+          div(cls := "editor-subsection-head", span("Cards"), addButton("+ Add cards", () => updateStack(i)(s => s.copy(contents = s.contents :+ SpawnSpec(CardDefId(""), 1))))),
           div(cls := "editor-rows", children <-- indexed(draft.signal.map(_.setup.stacks.lift(i).fold(0)(_.contents.size)), j => spawnRow(i, j))),
         ),
       )

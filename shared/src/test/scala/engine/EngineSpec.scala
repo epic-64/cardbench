@@ -92,8 +92,8 @@ class EngineSpec extends AnyWordSpec with Matchers:
   // Two single-card stacks, for exercising "a stack ceases to exist at 0 cards".
   private val solo = GameSetup(
     List(
-      StackSpec(StackId("a"), "A", Position(0, 0), Facing.Up, List(SpawnSpec(CardDefId("build"), 1))),
-      StackSpec(StackId("b"), "B", Position(0, 0), Facing.Up, List(SpawnSpec(CardDefId("build"), 1))),
+      StackSpec(StackId("a"), "A", Position(0, 0), Facing.Up, List(SpawnSpec(CardDefId("build"), 1)), persistent = false),
+      StackSpec(StackId("b"), "B", Position(0, 0), Facing.Up, List(SpawnSpec(CardDefId("build"), 1)), persistent = false),
     ),
   )
 
@@ -136,7 +136,7 @@ class EngineSpec extends AnyWordSpec with Matchers:
   private val essential = GameSetup(
     List(
       StackSpec(StackId("a"), "A", Position(0, 0), Facing.Up, List(SpawnSpec(CardDefId("build"), 1)), persistent = true),
-      StackSpec(StackId("b"), "B", Position(0, 0), Facing.Up, List(SpawnSpec(CardDefId("build"), 1))),
+      StackSpec(StackId("b"), "B", Position(0, 0), Facing.Up, List(SpawnSpec(CardDefId("build"), 1)), persistent = false),
     ),
   )
 
@@ -394,8 +394,8 @@ class EngineSpec extends AnyWordSpec with Matchers:
       )
 
     "deal only as many as the source holds when asked for more" in:
-      // The 12-card deck is drained on the 12th draw and (not being persistent)
-      // ceases to exist; asking for 13 deals all 12 it has rather than failing.
+      // The 12-card deck runs dry on the 12th draw; asking for 13 deals all 12 it
+      // has rather than failing.
       val moves = Engine.dealSteps(Engine.setup(catalog, rulebook, setup), deck, discard, 13).map(_.collect { case m: Step.Move => m }.length)
       moves shouldBe Right(12)
 
