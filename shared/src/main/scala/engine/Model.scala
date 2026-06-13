@@ -110,26 +110,67 @@ case class CardDef(
   color: String,
   title: String,
   description: String,
+  corners: CardCorners = CardCorners(),
 ) derives ReadWriter
 
-/** A positioned, sized box inside a card, in card-local pixels measured from the
-  * card's top-left corner: where one piece of card content — the title, the
-  * description — sits within the base rectangle.
+/** The four optional corner slots of a card front, each free text — typically a
+  * single emoji, a cost, or a count. What each slot reads is authored per card; how
+  * the slots *look* is shared across the game (see `CornerStyle`). An empty slot
+  * draws nothing.
   */
-case class CardBox(x: Int, y: Int, width: Int, height: Int) derives ReadWriter
+case class CardCorners(
+  topLeft: String = "",
+  topRight: String = "",
+  bottomLeft: String = "",
+  bottomRight: String = "",
+) derives ReadWriter
+
+/** The outline a corner slot is drawn with: a full circle, a plain square, or a
+  * square with softened edges.
+  */
+enum CornerShape:
+  case Circle, Square, Rounded
+
+object CornerShape:
+  // Lowercase on the wire, matching the rest of the authored layout JSON.
+  given ReadWriter[CornerShape] = readwriter[String].bimap(
+    {
+      case CornerShape.Circle  => "circle"
+      case CornerShape.Square  => "square"
+      case CornerShape.Rounded => "rounded"
+    },
+    {
+      case "circle"  => CornerShape.Circle
+      case "square"  => CornerShape.Square
+      case "rounded" => CornerShape.Rounded
+      case other     => sys.error(s"Unknown corner shape: $other")
+    },
+  )
+
+/** How every card's corner slots are drawn — one shared style across the game, set
+  * in the designer. `shape` outlines the slot and `font` is its CSS font-family;
+  * the fill is each card's own accent colour (see `CardDef.color`), not authored
+  * here. The text inside each slot is per-card (see `CardCorners`).
+  */
+case class CornerStyle(
+  shape: CornerShape,
+  font: String,
+) derives ReadWriter
 
 /** The shared visual template every card front is drawn from. The base rectangle
-  * is `width`×`height` pixels filled with `background`; the `title` and
-  * `description` boxes place each piece of text inside it. One layout serves the
-  * whole game — a card supplies only its own content and accent colour (see
-  * `CardDef`), the layout says how big the card is and where the text sits.
+  * is `width`×`height` pixels filled with `background`; the title and description
+  * flow to fill it, and the four corner slots are drawn in the shared `corner`
+  * style. One layout serves the whole game — a card supplies only its own content
+  * and accent colour (see `CardDef`), the layout says how big the card is and how
+  * the corners look.
   */
 case class CardLayout(
   width: Int,
   height: Int,
   background: String,
-  title: CardBox,
-  description: CardBox,
+  // Defaulted so games saved before corner styling existed (their layout has no
+  // `corner` field) still load, picking up the standard corner look.
+  corner: CornerStyle = CornerStyle(shape = CornerShape.Circle, font = "inherit"),
 ) derives ReadWriter
 
 object CardLayout:
@@ -141,8 +182,6 @@ object CardLayout:
     width = 130,
     height = 180,
     background = "#16161f",
-    title = CardBox(x = 10, y = 10, width = 110, height = 24),
-    description = CardBox(x = 10, y = 42, width = 110, height = 126),
   )
 
 /** A physical card on the table: one instance of a definition. */

@@ -128,7 +128,7 @@ object FineTuneView:
           div(
             cls       := (Seq("card", "card-front") ++ depth),
             styleAttr := CardFace.accent(d.map(_.color).getOrElse("transparent")),
-            CardFace.boxes(layout, d.map(_.title).getOrElse(defId.value), d.map(_.description).getOrElse("")),
+            CardFace.boxes(d.map(_.title).getOrElse(defId.value), d.map(_.description).getOrElse(""), d.map(_.corners).getOrElse(CardCorners())),
           )
 
     def startDrag(e: dom.PointerEvent): Unit =
