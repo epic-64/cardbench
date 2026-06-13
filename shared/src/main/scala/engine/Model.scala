@@ -44,43 +44,14 @@ object Facing:
     },
   )
 
-/** What facing a dealt card should end up in. `Keep` leaves it as it lies; `Up`
-  * and `Down` force it, flipping only when the card isn't already that way.
-  */
-enum TargetFacing:
-  case Up, Down, Keep
-
-  /** The concrete facing to force, or `None` to leave the card untouched. */
-  def facing: Option[Facing] = this match
-    case Up   => Some(Facing.Up)
-    case Down => Some(Facing.Down)
-    case Keep => None
-
-object TargetFacing:
-  // Lowercase on the wire, matching the authored setup JSON.
-  given ReadWriter[TargetFacing] = readwriter[String].bimap(
-    {
-      case TargetFacing.Up   => "up"
-      case TargetFacing.Down => "down"
-      case TargetFacing.Keep => "keep"
-    },
-    {
-      case "up"   => TargetFacing.Up
-      case "down" => TargetFacing.Down
-      case "keep" => TargetFacing.Keep
-      case other  => sys.error(s"Unknown target facing: $other")
-    },
-  )
-
 /** What a rule does when it fires. `Deal` moves `count` cards (default 1) from
-  * the top of one stack onto the top of another, forcing each dealt card into
-  * `targetFacing` (`Keep` leaves it as it lies; `Up`/`Down` flip it only when it
-  * isn't already there); each move is itself an `Event`, so it can cascade into
-  * further rules. `Shuffle` reorders one stack in place. Everything richer
-  * composes from more of these.
+  * the top of one stack onto the top of another; each dealt card takes on the
+  * destination stack's `facing` as it lands (see `Stack`), and each move is
+  * itself an `Event`, so it can cascade into further rules. `Shuffle` reorders
+  * one stack in place. Everything richer composes from more of these.
   */
 enum Effect derives ReadWriter:
-  case Deal(from: StackId, to: StackId, count: Int = 1, targetFacing: TargetFacing = TargetFacing.Keep)
+  case Deal(from: StackId, to: StackId, count: Int = 1)
   case Shuffle(stack: StackId)
 
 /** One atomic, animatable change in a cascade: relocate a single card, flip one,
@@ -144,6 +115,10 @@ object Layout:
   * pile sits in a freshly shuffled order with nothing drawn, added, or flipped
   * since — a hint for the UI, cleared by any verb that touches the cards.
   *
+  * `facing` is the orientation the pile presents: any card landing on the stack
+  * takes it on, so cards merge into a face-up pile face up and a face-down pile
+  * face down. `flipStack` turns the whole pile — cards and `facing` together.
+  *
   * `persistent` marks an essential pile — a player's deck or discard — that
   * stays on the table even at zero cards, so effects can keep targeting it. A
   * non-persistent stack ceases to exist once its last card leaves.
@@ -153,6 +128,7 @@ case class Stack(
   label: String,
   position: Position,
   cards: List[CardInstance],
+  facing: Facing = Facing.Up,
   shuffled: Boolean = false,
   persistent: Boolean = false,
   layout: Layout = Layout.Pile,
