@@ -347,15 +347,17 @@
 
 /* ── Manual-effect prompt ────────────────────────────────────────────────────
    A small, non-modal dialog raised when a cascade pauses on a Manual effect. It
-   floats over the board (anchored to the triggering card in JS) without a
+   lives inside the world, absolutely placed beside the triggering card in board
+   coordinates (left/top set in JS), so it pans and zooms with the camera. No
    backdrop, so the table stays live for the player to carry the effect out by
    hand; only its "Done" button resumes the cascade. */
 .manual-dialog {
+  position: absolute;
   z-index: 200;
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
-  max-width: 260px;
+  width: 200px;
   padding: 0.9rem;
   background: var(--surface);
   border: var(--border);
