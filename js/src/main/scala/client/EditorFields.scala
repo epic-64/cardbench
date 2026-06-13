@@ -1,7 +1,6 @@
 package client
 
 import com.raquo.laminar.api.L.*
-import org.scalajs.dom
 
 /** The small vocabulary of labelled form controls the editor is built from.
   *
@@ -56,17 +55,6 @@ object EditorFields:
         defaultValue := initial,
         onInput.mapToValue --> (v => onChanged(v)),
       ),
-    )
-
-  def checkboxField(name: String, initial: Boolean, onChanged: Boolean => Unit): Element =
-    label(
-      cls := "field field-check",
-      input(
-        typ := "checkbox",
-        defaultChecked := initial,
-        onInput --> (e => onChanged(e.target.asInstanceOf[dom.html.Input].checked)),
-      ),
-      span(cls := "field-label", name),
     )
 
   /** A drop-down over a fixed set of `(label, value)` choices. The current value's

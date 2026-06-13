@@ -36,7 +36,7 @@ case class StackSpec(
   facing: Facing,             // applied to every card spawned here
   contents: List[SpawnSpec],                      // expanded into instances, in order
   arrangement: Arrangement = Arrangement.Ordered, // how the spawned cards are arranged at setup
-  persistent: Boolean = false,                    // an essential pile: kept on the table even at 0 cards
+  persistent: Boolean = true,                     // an essential pile: kept on the table even at 0 cards. Authored stacks are persistent; only stacks spun up dynamically during play are not.
   layout: Layout = Layout.Pile,                   // how the stack is shown: a heap (Pile) or a row of cards
   width: Option[Int] = None,                      // expected area width in cards; a layout hint, see areaWidth
 ) derives ReadWriter:
