@@ -37,15 +37,17 @@ object CardFace:
     * alongside its drag handlers.
     */
   def boxes(title: String, description: String, corners: CardCorners, fill: CornerFill): Seq[Node] =
+    // The left-aligned title only needs to keep clear of the top-right corner, and
+    // only when that slot is actually filled.
+    val titleCls = Seq("card-title") ++ Option.when(corners.topRight.nonEmpty)("card-title-clear")
     Seq(
-      div(cls := "card-title", title),
+      div(cls := titleCls, title),
       div(cls := "card-desc", description),
     ) ++ cornerNodes(corners, fill)
 
   private def cornerNodes(c: CardCorners, fill: CornerFill): Seq[Node] =
     val mode = fillClass(fill)
     Seq(
-      "card-corner-tl" -> c.topLeft,
       "card-corner-tr" -> c.topRight,
       "card-corner-bl" -> c.bottomLeft,
       "card-corner-br" -> c.bottomRight,

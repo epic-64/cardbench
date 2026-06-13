@@ -56,7 +56,6 @@ object EditorView:
           textAreaField("Description", c.description, v => updateCard(i)(_.copy(description = v))),
           div(
             cls := "editor-card-row",
-            textField("↖", c.corners.topLeft, v => updateCard(i)(cd => cd.copy(corners = cd.corners.copy(topLeft = v)))),
             textField("↗", c.corners.topRight, v => updateCard(i)(cd => cd.copy(corners = cd.corners.copy(topRight = v)))),
             textField("↙", c.corners.bottomLeft, v => updateCard(i)(cd => cd.copy(corners = cd.corners.copy(bottomLeft = v)))),
             textField("↘", c.corners.bottomRight, v => updateCard(i)(cd => cd.copy(corners = cd.corners.copy(bottomRight = v)))),
@@ -463,11 +462,11 @@ object EditorView:
   // True if a card fills in any of its four corners — drives whether the design
   // preview shows the card's own corners or placeholder glyphs.
   private def hasCorner(c: CardCorners): Boolean =
-    Seq(c.topLeft, c.topRight, c.bottomLeft, c.bottomRight).exists(_.nonEmpty)
+    Seq(c.topRight, c.bottomLeft, c.bottomRight).exists(_.nonEmpty)
 
   // Stand-in corner text for the design preview when the sample card has none, so
   // the chosen background/shape/font are always visible.
-  private val sampleCorners = CardCorners(topLeft = "★", topRight = "3", bottomLeft = "♦", bottomRight = "✦")
+  private val sampleCorners = CardCorners(topRight = "3", bottomLeft = "♦", bottomRight = "✦")
 
   // An effect is a tagged choice too: a single "+ Add effect" button drops in a
   // Deal, and a per-row type select swaps between the kinds, carrying a stack id
