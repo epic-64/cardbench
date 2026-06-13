@@ -193,6 +193,11 @@ case class CardLayout(
   width: Int,
   height: Int,
   background: String,
+  // Title and description text size, each a percent of the card's base font (which
+  // the in-game A−/A+ control scales), so a card stays legible at any zoom. Defaulted
+  // to the original 100%/80% so games saved before these were authored look unchanged.
+  titleFont: Int = 100,
+  descriptionFont: Int = 80,
   // Defaulted so games saved before corner styling existed (their layout has no
   // `corner` field) still load, picking up the standard corner look.
   corner: CornerStyle = CornerStyle(shape = CornerShape.Circle, fill = CornerFill.Fill, font = "inherit"),
