@@ -30,6 +30,7 @@ object Engine:
         spec.label,
         spec.position,
         ordered,
+        facing = spec.facing,
         shuffled = spec.arrangement == Arrangement.Shuffled,
         persistent = spec.persistent,
         layout = spec.layout,
@@ -83,7 +84,7 @@ object Engine:
     * returned — a drop is all-or-nothing.
     */
   def dropSteps(state: GameState, card: CardId, onto: StackId, seed: Long = 0L): Either[EngineError, List[Step]] =
-    resolveMove(state, card, onto, TargetFacing.Keep, seed).map(_._2)
+    resolveMove(state, card, onto, seed).map(_._2)
 
   /** The script a stack button runs: deal *up to* `count` cards from the top of
     * `from` onto `to`, each relocation cascading through the rules exactly like a
@@ -104,12 +105,17 @@ object Engine:
         else s
       state.copy(stacks = stacks)
 
-  /** Flip every card in a stack between Up and Down at once; the pile order is
-    * untouched. Like the single-card flip, this clears the freshly-shuffled hint.
+  /** Flip every card in a stack between Up and Down at once, turning the stack's
+    * own `facing` with them so cards dealt in afterwards land the new way up; the
+    * pile order is untouched. Like the single-card flip, this clears the
+    * freshly-shuffled hint.
     */
   def flipStack(state: GameState, stack: StackId): Either[EngineError, GameState] =
     find(state, stack).map: s =>
-      replaceStack(state, s.copy(cards = s.cards.map(c => c.copy(facing = toggle(c.facing))), shuffled = false))
+      replaceStack(
+        state,
+        s.copy(cards = s.cards.map(c => c.copy(facing = toggle(c.facing))), facing = toggle(s.facing), shuffled = false),
+      )
 
   /** Reposition a whole stack on the board; its cards are untouched. */
   def moveStack(state: GameState, stack: StackId, to: Position): Either[EngineError, GameState] =
@@ -128,7 +134,7 @@ object Engine:
       val without = state.stacks.map: s =>
         if s.cards.exists(_.id == card) then s.copy(cards = s.cards.filterNot(_.id == card), shuffled = false)
         else s
-      val created = Stack(newStack, "", to, List(instance))
+      val created = Stack(newStack, "", to, List(instance), facing = instance.facing)
       state.copy(stacks = dropEmpty(without :+ created))
 
   // ── the effect system ────────────────────────────────────────────────────
@@ -138,21 +144,22 @@ object Engine:
   // reactions chain naturally until a move triggers nothing. All-or-nothing via
   // `Either`: the first failure aborts before any step escapes.
 
-  /** Relocate `card` onto `to` (forcing `facing` unless it is `Keep`), emit the
-    * resulting "moved onto `to`" event, and run the effects of every rule that
-    * fires on it. Returns the settled state and the ordered steps it produced.
+  /** Relocate `card` onto `to`, turning it to match the destination stack's
+    * `facing` as it lands, emit the resulting "moved onto `to`" event, and run the
+    * effects of every rule that fires on it. Returns the settled state and the
+    * ordered steps it produced.
     */
   private def resolveMove(
     state: GameState,
     card: CardId,
     to: StackId,
-    facing: TargetFacing,
     seed: Long,
   ): Either[EngineError, (GameState, List[Step])] =
     for
       instance <- findCard(state, card).toRight(UnknownCard(card))
+      dest     <- find(state, to)
       moved    <- move(state, card, to)
-      flips     = facing.facing.filter(_ != instance.facing).map(_ => Step.Flip(card)).toList
+      flips     = Option.when(instance.facing != dest.facing)(Step.Flip(card)).toList
       flipped   = flips.foldLeft(moved)((s, _) => flip(s, card).getOrElse(s))
       event     = Event.Moved(card, instance.defId, to)
       effects   = state.rules.filter(_.trigger.fires(event)).flatMap(_.effects)
@@ -180,7 +187,7 @@ object Engine:
     lenient: Boolean = false,
   ): Either[EngineError, (GameState, List[Step])] =
     effect match
-      case Effect.Deal(from, to, count, facing) =>
+      case Effect.Deal(from, to, count) =>
         List.fill(count)(()).foldLeft[Either[EngineError, (GameState, List[Step])]](Right((state, Nil))):
           (acc, _) =>
             acc.flatMap:
@@ -190,7 +197,7 @@ object Engine:
                 find(s, from).flatMap(_.cards.headOption.toRight(EmptyStack(from))) match
                   case Left(_) if lenient  => Right((s, steps))
                   case Left(err)           => Left(err)
-                  case Right(top)          => resolveMove(s, top.id, to, facing, seed).map((s2, more) => (s2, steps ++ more))
+                  case Right(top)          => resolveMove(s, top.id, to, seed).map((s2, more) => (s2, steps ++ more))
       case Effect.Shuffle(stack) =>
         val stackSeed = seed ^ stack.value.hashCode.toLong
         shuffle(state, stack, stackSeed).map(reordered => (reordered, List(Step.Shuffle(stack, stackSeed))))

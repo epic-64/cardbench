@@ -26,8 +26,8 @@ class EngineSpec extends AnyWordSpec with Matchers:
       Rule(
         Trigger.Moved(CardDefId("build"), StackId("in-play")),
         effects = List(
-          Effect.Deal(StackId("features"), StackId("build-zone"), 1, targetFacing = TargetFacing.Up),
-          Effect.Deal(StackId("debt"), StackId("discard"), 2, targetFacing = TargetFacing.Up),
+          Effect.Deal(StackId("features"), StackId("build-zone"), 1),
+          Effect.Deal(StackId("debt"), StackId("discard"), 2),
         ),
       ),
     ),
@@ -230,6 +230,10 @@ class EngineSpec extends AnyWordSpec with Matchers:
       val flipped = Engine.flipStack(state, deck).toOption.get
       stackOf(flipped, deck).cards.map(_.id) shouldBe stackOf(state, deck).cards.map(_.id)
 
+    "turn the stack's own facing over with its cards" in:
+      val flipped = Engine.flipStack(Engine.setup(catalog, rulebook, setup), deck).toOption.get
+      stackOf(flipped, deck).facing shouldBe Facing.Up
+
     "reject an unknown stack" in:
       Engine.flipStack(Engine.setup(catalog, rulebook, setup), StackId("nope")) shouldBe Left(
         EngineError.UnknownStack(StackId("nope")),
@@ -307,6 +311,13 @@ class EngineSpec extends AnyWordSpec with Matchers:
       stackOf(played, StackId("build-zone")).cards.head.facing shouldBe Facing.Up
       stackOf(played, StackId("discard")).cards.map(_.facing).distinct shouldBe List(Facing.Up)
 
+    "turn the dropped card to match the destination stack's facing" in:
+      // deck#0 lies face-down; the discard it lands on is a face-up pile, so the
+      // card inherits the stack's facing as it merges in.
+      val state   = Engine.setup(catalog, rulebook, setup)
+      val dropped = Engine.drop(state, CardId("deck#0"), discard).toOption.get
+      stackOf(dropped, discard).cards.head.facing shouldBe Facing.Up
+
     "do nothing beyond the move when the arrival triggers no rule" in:
       val state   = Engine.setup(playCatalog, rulebook, playSetup)
       val dropped = Engine.drop(state, CardId("hand#0"), StackId("discard")).toOption.get
@@ -354,18 +365,23 @@ class EngineSpec extends AnyWordSpec with Matchers:
 
   "Engine.dealSteps" should:
 
-    "script one move per card off the top of the source onto the target" in:
+    "script one move per card off the top of the source onto the target, each revealed by the face-up target" in:
+      // The deck is face-down and the discard face-up, so every dealt card flips to
+      // match its destination as it lands.
       Engine.dealSteps(Engine.setup(catalog, rulebook, setup), deck, discard, 2) shouldBe Right(
         List(
           Step.Move(CardId("deck#0"), discard),
+          Step.Flip(CardId("deck#0")),
           Step.Move(CardId("deck#1"), discard),
+          Step.Flip(CardId("deck#1")),
         ),
       )
 
     "deal only as many as the source holds when asked for more" in:
       // The 12-card deck is drained on the 12th draw and (not being persistent)
       // ceases to exist; asking for 13 deals all 12 it has rather than failing.
-      Engine.dealSteps(Engine.setup(catalog, rulebook, setup), deck, discard, 13).map(_.length) shouldBe Right(12)
+      val moves = Engine.dealSteps(Engine.setup(catalog, rulebook, setup), deck, discard, 13).map(_.collect { case m: Step.Move => m }.length)
+      moves shouldBe Right(12)
 
   "JSON codecs" should:
 

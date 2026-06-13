@@ -129,14 +129,13 @@ object EditorView:
         removeButton(() => removeEffect()),
       )
       effect match
-        case Effect.Deal(_, _, dealCount, facing) =>
+        case Effect.Deal(_, _, dealCount) =>
           div(
             cls := "editor-effect",
             kindField,
             idSelectField("from", stackIds, dealField(_.from.value), v => updateDeal(_.copy(from = StackId(v)))),
             idSelectField("to", stackIds, dealField(_.to.value), v => updateDeal(_.copy(to = StackId(v)))),
             numberField("Count", dealCount, n => updateDeal(_.copy(count = n))),
-            selectField("Facing", targetFacingOptions, facing, f => updateDeal(_.copy(targetFacing = f))),
             actions,
           )
         case _: Effect.Shuffle =>
@@ -364,10 +363,9 @@ object EditorView:
   private def indexed(count: Signal[Int], renderRow: Int => Element): Signal[List[Element]] =
     count.distinct.map(n => (0 until n).toList.map(renderRow))
 
-  private val facingOptions       = List("Up" -> Facing.Up, "Down" -> Facing.Down)
-  private val targetFacingOptions = List("Keep" -> TargetFacing.Keep, "Up" -> TargetFacing.Up, "Down" -> TargetFacing.Down)
-  private val arrangementOptions  = List("Ordered" -> Arrangement.Ordered, "Shuffled" -> Arrangement.Shuffled)
-  private val layoutOptions       = List("Pile" -> Layout.Pile, "Row" -> Layout.Row)
+  private val facingOptions      = List("Up" -> Facing.Up, "Down" -> Facing.Down)
+  private val arrangementOptions = List("Ordered" -> Arrangement.Ordered, "Shuffled" -> Arrangement.Shuffled)
+  private val layoutOptions      = List("Pile" -> Layout.Pile, "Row" -> Layout.Row)
 
   // An effect is a tagged choice too: a single "+ Add effect" button drops in a
   // Deal, and a per-row type select swaps between the kinds, carrying a stack id
