@@ -39,6 +39,7 @@ case class StackSpec(
   persistent: Boolean = true,                     // an essential pile: kept on the table even at 0 cards. Authored stacks are persistent; only stacks spun up dynamically during play are not.
   layout: Layout = Layout.Pile,                   // how the stack is shown: a heap (Pile) or a row of cards
   width: Option[Int] = None,                      // expected area width in cards; a layout hint, see areaWidth
+  group: String = "",                             // editor-only organisation: the id of the StackGroup this stack sits in ("" = ungrouped). Has no gameplay effect.
 ) derives ReadWriter:
   /** How many cards wide this stack's area is expected to be, used by the layout
     * editor to size its footprint. A planning hint only — it never caps the card
@@ -64,8 +65,22 @@ enum ButtonAction derives ReadWriter:
   */
 case class StackButton(stackId: StackId, label: String, action: ButtonAction) derives ReadWriter
 
-/** The starting table: the authored stacks plus any stack buttons over them. */
-case class GameSetup(stacks: List[StackSpec], buttons: List[StackButton] = Nil) derives ReadWriter
+/** A named bucket the stack editor groups stack definitions into, purely so a game
+  * with many stacks stays navigable while authoring. `id` is the stable key stacks
+  * reference (see `StackSpec.group`); `name` is the editable human label. Groups
+  * carry no gameplay meaning — the engine ignores them entirely.
+  */
+case class StackGroup(id: String, name: String) derives ReadWriter
+
+/** The starting table: the authored stacks plus any stack buttons over them.
+  * `groups` is editor-only organisation for the stacks (see `StackGroup`); it never
+  * affects play and defaults to empty so games authored before it load unchanged.
+  */
+case class GameSetup(
+  stacks: List[StackSpec],
+  buttons: List[StackButton] = Nil,
+  groups: List[StackGroup] = Nil,
+) derives ReadWriter
 
 /** What cards exist, for rendering. */
 case class CardCatalog(cards: List[CardDef]) derives ReadWriter
