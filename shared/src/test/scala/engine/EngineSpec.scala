@@ -56,6 +56,22 @@ class EngineSpec extends AnyWordSpec with Matchers:
     ),
   )
 
+  // A rulebook whose reaction to a Build landing on in-play pauses for the player:
+  // a Manual step sits between two deals, so the second deal must run only once the
+  // player has marked the manual step done — and against whatever table they leave.
+  private val manualPrompt = "Resolve the battle by hand."
+  private val manualRulebook = Rulebook(
+    List(
+      Rule(
+        Trigger.Moved(CardDefId("build"), StackId("in-play")),
+        effects = List(
+          Effect.Manual(manualPrompt),
+          Effect.Deal(StackId("features"), StackId("build-zone"), 1),
+        ),
+      ),
+    ),
+  )
+
   // The same deck, but flagged to shuffle at setup.
   private val shuffledSetup = GameSetup(
     List(
@@ -383,6 +399,53 @@ class EngineSpec extends AnyWordSpec with Matchers:
       val moves = Engine.dealSteps(Engine.setup(catalog, rulebook, setup), deck, discard, 13).map(_.collect { case m: Step.Move => m }.length)
       moves shouldBe Right(12)
 
+  "Engine.step over a manual effect" should:
+
+    // The cascade surfaces the drop's own move first; the manual prompt is the next
+    // advance through the queue that move queued.
+    def pauseOf(state: GameState): Progress =
+      val Progress.Ran(moved, _, rest) =
+        Engine.dropCascade(state, CardId("hand#0"), StackId("in-play")).toOption.get: @unchecked
+      Engine.step(moved, rest, 0L).toOption.get
+
+    "pause on the manual step, naming the triggering card and its prompt" in:
+      val Progress.Await(_, card, description, _) =
+        pauseOf(Engine.setup(playCatalog, manualRulebook, playSetup)): @unchecked
+      card shouldBe CardId("hand#0")
+      description shouldBe manualPrompt
+
+    "hold the later effect back until the pause is resolved" in:
+      val Progress.Await(paused, _, _, _) =
+        pauseOf(Engine.setup(playCatalog, manualRulebook, playSetup)): @unchecked
+      stackOf(paused, StackId("build-zone")).cards shouldBe empty
+
+    "resume the rest against the table the player leaves behind" in:
+      // The manual prompt fires before the deal, so the player can rearrange first:
+      // here they pull features#0 out by hand, and the resumed deal takes the new top.
+      val Progress.Await(paused, _, _, rest) =
+        pauseOf(Engine.setup(playCatalog, manualRulebook, playSetup)): @unchecked
+      val edited                    = Engine.move(paused, CardId("features#0"), StackId("discard")).toOption.get
+      val Progress.Ran(done, _, _)  = Engine.step(edited, rest, 0L).toOption.get: @unchecked
+      stackOf(done, StackId("build-zone")).cards.map(_.id) shouldBe List(CardId("features#1"))
+
+  "Engine.dropSteps over a manual effect" should:
+
+    "elide the prompt, splicing the batches either side of it into one script" in:
+      Engine.dropSteps(Engine.setup(playCatalog, manualRulebook, playSetup), CardId("hand#0"), StackId("in-play")) shouldBe Right(
+        List(
+          Step.Move(CardId("hand#0"), StackId("in-play")),
+          Step.Move(CardId("features#0"), StackId("build-zone")),
+          Step.Flip(CardId("features#0")),
+        ),
+      )
+
+  "Engine.drop over a manual effect" should:
+
+    "apply the whole cascade headlessly, the manual step a no-op pass-through" in:
+      val played = Engine.drop(Engine.setup(playCatalog, manualRulebook, playSetup), CardId("hand#0"), StackId("in-play")).toOption.get
+      stackOf(played, StackId("build-zone")).cards.size shouldBe 1
+      stackOf(played, StackId("features")).cards.size shouldBe 2
+
   "JSON codecs" should:
 
     "round-trip a catalog unchanged" in:
@@ -396,6 +459,9 @@ class EngineSpec extends AnyWordSpec with Matchers:
 
     "round-trip a rulebook with a shuffle effect unchanged" in:
       read[Rulebook](write(shuffleRulebook)) shouldBe shuffleRulebook
+
+    "round-trip a rulebook with a manual effect unchanged" in:
+      read[Rulebook](write(manualRulebook)) shouldBe manualRulebook
 
     "round-trip a setup with persistent stacks unchanged" in:
       read[GameSetup](write(playSetup)) shouldBe playSetup

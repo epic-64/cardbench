@@ -100,6 +100,12 @@ object EditorView:
             case s: Effect.Shuffle => r.effects.updated(j, g(s))
             case _                 => r.effects
           })
+      def updateManual(g: Effect.Manual => Effect.Manual): Unit =
+        updateRule(i): r =>
+          r.copy(effects = r.effects.lift(j).fold(r.effects) {
+            case m: Effect.Manual => r.effects.updated(j, g(m))
+            case _                => r.effects
+          })
       def setEffectKind(kind: String): Unit =
         updateRule(i)(r => r.copy(effects = r.effects.lift(j).fold(r.effects)(e => r.effects.updated(j, withEffectKind(e, kind)))))
       def removeEffect(): Unit =
@@ -143,6 +149,13 @@ object EditorView:
             cls := "editor-effect",
             kindField,
             idSelectField("Stack", stackIds, shuffleField, v => updateShuffle(_.copy(stack = StackId(v)))),
+            actions,
+          )
+        case Effect.Manual(description) =>
+          div(
+            cls := "editor-effect",
+            kindField,
+            textAreaField("Description", description, v => updateManual(_.copy(description = v))),
             actions,
           )
 
@@ -370,16 +383,21 @@ object EditorView:
   // An effect is a tagged choice too: a single "+ Add effect" button drops in a
   // Deal, and a per-row type select swaps between the kinds, carrying a stack id
   // across so retyping doesn't blank the row.
-  private val effectKindOptions = List("Deal" -> "deal", "Shuffle" -> "shuffle")
+  private val effectKindOptions = List("Deal" -> "deal", "Shuffle" -> "shuffle", "Manual" -> "manual")
 
   private def effectKind(e: Effect): String = e match
     case _: Effect.Deal    => "deal"
     case _: Effect.Shuffle => "shuffle"
+    case _: Effect.Manual  => "manual"
 
   private def withEffectKind(e: Effect, kind: String): Effect = (e, kind) match
-    case (d: Effect.Deal, "shuffle") => Effect.Shuffle(d.from)
-    case (s: Effect.Shuffle, "deal") => Effect.Deal(s.stack, StackId(""))
-    case (other, _)                  => other
+    case (d: Effect.Deal, "shuffle")    => Effect.Shuffle(d.from)
+    case (d: Effect.Deal, "manual")     => Effect.Manual("")
+    case (s: Effect.Shuffle, "deal")    => Effect.Deal(s.stack, StackId(""))
+    case (_: Effect.Shuffle, "manual")  => Effect.Manual("")
+    case (_: Effect.Manual, "deal")     => Effect.Deal(StackId(""), StackId(""))
+    case (_: Effect.Manual, "shuffle")  => Effect.Shuffle(StackId(""))
+    case (other, _)                     => other
 
   // A button's action is a tagged choice ("from"/"to") carrying a stack and a
   // count; these read and rebuild it field-by-field so a tab switch never loses

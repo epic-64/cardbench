@@ -23,6 +23,10 @@ object GameView:
   private final case class CardDrag(id: CardId, offX: Int, offY: Int)
   // A stack mid-move: the live DOM element plus the grab offset within it.
   private final case class StackDrag(el: dom.html.Element, grabX: Int, grabY: Int)
+  // A cascade halted on a `Manual` effect: the card the prompt hangs off, its text,
+  // and the continuation as plain data — the reactions still queued, plus the seed
+  // the play rolled, so resuming is just another `Engine.step` from the live table.
+  private final case class ManualPrompt(card: CardId, description: String, rest: List[engine.Pending], seed: Long)
 
   def view(definition: GameDefinition, onBack: () => Unit): Element =
     // A fresh table from the authored data; the saved live table (if a game is in
@@ -60,6 +64,12 @@ object GameView:
 
     // Which stack is mid-shuffle: drives the shake animation, cleared on a timer.
     val shuffling = Var(Option.empty[StackId])
+
+    // The manual prompt currently awaiting the player, if any: a cascade paused on
+    // a `Manual` effect. While it's set the board stays interactive (the player is
+    // implementing the effect by hand) but drops no longer fire rules and buttons
+    // are inert — only the prompt's "Done" resumes the suspended cascade.
+    val manualPause = Var(Option.empty[ManualPrompt])
 
     // Which stack (if any) is open in the inspect overlay: a full view of every
     // card in the pile, with click-to-pull. Cleared when dismissed or once the
@@ -268,11 +278,11 @@ object GameView:
     // draws into this stack, DealTo deals out of it. Ignored while a script runs;
     // a deal from an empty source simply resolves to nothing.
     def runButton(stack: Stack, b: StackButton): Unit =
-      if !animating then
+      if !animating && manualPause.now().isEmpty then
         val (from, to, count) = b.action match
           case ButtonAction.DealFrom(src, c) => (src, stack.id, c)
           case ButtonAction.DealTo(dst, c)   => (stack.id, dst, c)
-        Engine.dealSteps(state.now(), from, to, count, System.currentTimeMillis()).foreach(runScript(_))
+        startCascade(Engine.dealCascade(state.now(), from, to, count, _), None)
 
     // ── animated drops ─────────────────────────────────────────────────────
     // A drop resolves as a script of atomic steps (Engine.dropSteps); we run it
@@ -338,12 +348,13 @@ object GameView:
           dom.window.setTimeout(() => shuffling.set(None), shuffleAnimMs)
           dom.window.setTimeout(() => done(), shuffleAnimMs)
 
+    // Animate one batch of steps in order, calling `onDone` once the last settles.
     // `firstFrom` overrides only the first step's glide origin (the dropped card);
-    // every reaction step that follows glides from its own real position.
-    def runScript(steps: List[Step], firstFrom: Option[dom.DOMRect] = None): Unit =
+    // every step that follows glides from its own real position.
+    def runSteps(steps: List[Step], firstFrom: Option[dom.DOMRect], onDone: () => Unit): Unit =
       // A play that touches a whole batch of cards (a big deal, sweep, or a stack
       // migration that flips every card) drags if each card animates at full speed,
-      // so once the script crosses the threshold we shrink every move and flip to
+      // so once the batch crosses the threshold we shrink every move and flip to
       // keep the cascade snappy.
       val touched = steps.count(s => s.isInstanceOf[Step.Move] || s.isInstanceOf[Step.Flip])
       val bulk    = touched >= bulkMoveThreshold
@@ -351,17 +362,54 @@ object GameView:
       val flipDur = if bulk then bulkFlipAnimMs else flipAnimMs
       def loop(remaining: List[Step], fromOverride: Option[dom.DOMRect]): Unit =
         remaining match
-          case Nil          => animating = false
+          case Nil          => onDone()
           case step :: rest => animateStep(step, fromOverride, moveDur, flipDur, () => loop(rest, None))
-      animating = true
       loop(steps, firstFrom)
 
+    // Drive a cascade one advance at a time: animate the steps this effect produced,
+    // then step the queue that remains. `Done` ends the play; `Await` releases the
+    // board and raises the prompt — the player implements the effect by hand and
+    // "Done" resumes from the table they leave behind. The queue advances from the
+    // *live* table (`state.now()`), so resuming after a pause sees those by-hand changes.
+    def drive(progress: Progress, firstFrom: Option[dom.DOMRect], seed: Long): Unit =
+      progress match
+        case Progress.Done(_) =>
+          animating = false
+        case Progress.Ran(_, steps, rest) =>
+          runSteps(steps, firstFrom, () => Engine.step(state.now(), rest, seed).foreach(drive(_, None, seed)))
+        case Progress.Await(_, card, description, rest) =>
+          animating = false
+          manualPause.set(Some(ManualPrompt(card, description, rest, seed)))
+
+    // Kick off a cascade, ignoring one that resolved to nothing (Left). The play's
+    // seed is rolled once here and threaded through every advance so shuffles stay
+    // deterministic across the whole cascade, pauses included.
+    def startCascade(begin: Long => Either[EngineError, Progress], firstFrom: Option[dom.DOMRect]): Unit =
+      val seed = System.currentTimeMillis()
+      begin(seed).foreach: progress =>
+        animating = true
+        drive(progress, firstFrom, seed)
+
+    // Resume the suspended cascade against the table as the player left it, then
+    // clear the prompt; the resumed advance may itself pause again, looping the same way.
+    def completeManual(prompt: ManualPrompt): Unit =
+      manualPause.set(None)
+      animating = true
+      Engine.step(state.now(), prompt.rest, prompt.seed).foreach(drive(_, None, prompt.seed))
+
     // Drop a card onto a stack: relocate it and play out whatever reactions the
-    // rules fire, as an animated step script. The card just merging on top with no
-    // rule to react is simply the one-step case. A drop that resolves to nothing
-    // (Left) is ignored.
+    // rules fire, as an animated cascade. The card just merging on top with no rule
+    // to react is simply the one-step case. A drop that resolves to nothing (Left)
+    // is ignored. During a manual pause the player is arranging the table by hand,
+    // so a drop is a plain move that fires no rules (it must not start a second cascade).
     def dropAnimated(card: CardId, onto: StackId, from: Option[dom.DOMRect]): Unit =
-      Engine.dropSteps(state.now(), card, onto, System.currentTimeMillis()).foreach(runScript(_, from))
+      manualPause.now() match
+        case Some(_) =>
+          Engine.moveSteps(state.now(), card, onto).foreach: steps =>
+            animating = true
+            runSteps(steps, from, () => animating = false)
+        case None =>
+          startCascade(Engine.dropCascade(state.now(), card, onto, _), from)
 
     // A card dropped onto a stack relocates onto it (and the rules react). Dropped
     // onto its own single-card stack it just repositions instead — so a lone card
@@ -545,6 +593,22 @@ object GameView:
         ),
       )
 
+    // The manual-effect prompt: a small, non-modal dialog anchored just under the
+    // card whose arrival paused the cascade (centred as a fallback if that card has
+    // since left the table). Non-modal on purpose — the board stays live so the
+    // player can carry out the effect by hand; only "Done" resumes the cascade.
+    def manualDialog(prompt: ManualPrompt): Element =
+      val anchor = cardEl(prompt.card).map(_.getBoundingClientRect())
+      val position = anchor match
+        case Some(r) => s"position:fixed;left:${r.left}px;top:${r.bottom + 8}px"
+        case None    => "position:fixed;left:50%;top:40%;transform:translate(-50%,-50%)"
+      div(
+        cls       := "manual-dialog",
+        styleAttr := position,
+        div(cls := "manual-desc", prompt.description),
+        button(cls := "btn btn-primary", "Done", onClick --> (_ => completeManual(prompt))),
+      )
+
     // Snap every authored stack back to the position it started at. Loose stacks
     // split off mid-play have no authored home, so they're left where they lie.
     def restorePositions(): Unit =
@@ -556,6 +620,7 @@ object GameView:
     // game is itself the new ongoing game.
     def restartGame(): Unit =
       if !animating && dom.window.confirm("Restart this game from a fresh setup? Your current progress will be lost.") then
+        manualPause.set(None) // drop any pending prompt; its continuation is for the old table
         state.set(freshSetup())
 
     div(
@@ -612,6 +677,11 @@ object GameView:
           open.flatMap(id => s.stacks.find(_.id == id)) match
             case Some(stack) if stack.cards.nonEmpty => inspectOverlay(stack)
             case _                                   => emptyNode,
+      // The manual-effect prompt, when a cascade is paused waiting on the player.
+      child <-- manualPause.signal.map {
+        case Some(prompt) => manualDialog(prompt)
+        case None         => emptyNode
+      },
     )
 
   private def clamp(n: Int): Int = math.max(0, n)
