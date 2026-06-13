@@ -344,3 +344,26 @@
 .inspect-card:hover {
   border-color: var(--accent);
 }
+
+/* ── Manual-effect prompt ────────────────────────────────────────────────────
+   A small, non-modal dialog raised when a cascade pauses on a Manual effect. It
+   floats over the board (anchored to the triggering card in JS) without a
+   backdrop, so the table stays live for the player to carry the effect out by
+   hand; only its "Done" button resumes the cascade. */
+.manual-dialog {
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-width: 260px;
+  padding: 0.9rem;
+  background: var(--surface);
+  border: var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(5, 5, 10, 0.6);
+}
+
+.manual-desc {
+  white-space: pre-wrap;
+  line-height: 1.4;
+}

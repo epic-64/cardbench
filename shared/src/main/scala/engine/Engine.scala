@@ -71,30 +71,83 @@ object Engine:
   /** Move a card onto a stack and let the table react: relocate it, then run the
     * effects of every rule the move triggers — and, since each effect is itself a
     * move, the rules *those* in turn trigger, cascading until nothing more fires.
-    * Applies the whole cascade at once; see `dropSteps` for the step-by-step form
-    * the animated shell uses.
+    * Applies the whole cascade at once. A `Manual` effect has no headless meaning —
+    * there is no player to act on the prompt — so it auto-resumes against the same
+    * table, a no-op pass-through. See `dropCascade`/`step` for the atomic form the
+    * animated shell drives, where a manual prompt actually pauses for the player.
     */
   def drop(state: GameState, card: CardId, onto: StackId, seed: Long = 0L): Either[EngineError, GameState] =
-    dropSteps(state, card, onto, seed).map(applySteps(state, _))
+    dropCascade(state, card, onto, seed).flatMap(runToEnd(_, seed))
 
-  /** The script a drop runs: the card relocating onto `onto`, then one ordered
-    * `Step` per atomic move or flip the reactions produce, cascading through the
-    * rules each move in turn triggers. Threaded through `Either`, so any failure
-    * (e.g. an effect dealing from an empty stack) aborts before a single step is
-    * returned — a drop is all-or-nothing.
+  /** Begin a drop: relocate `card` onto `onto` and report it as the first advance —
+    * the move's own steps plus the reactions its arrival queues. The shell animates
+    * the steps then drives the queue with `step`; pausing on any `Manual` it hits.
+    * Strict — a failure (e.g. an effect dealing from an empty stack) aborts the
+    * whole drop before a single step escapes.
     */
+  def dropCascade(state: GameState, card: CardId, onto: StackId, seed: Long = 0L): Either[EngineError, Progress] =
+    resolveOne(state, card, onto, seed).map((moved, steps, triggered) => Progress.Ran(moved, steps, triggered))
+
+  /** Begin a stack button's deal: deal *up to* `count` cards from the top of `from`
+    * onto `to`, each relocation cascading through the rules exactly like a drop and
+    * pausing the same way on any `Manual`. Lenient — dealing stops once `from` runs
+    * dry, so a deal-20 button on a 5-card stack deals 5. Returns the first advance;
+    * the shell drives the rest with `step`.
+    */
+  def dealCascade(state: GameState, from: StackId, to: StackId, count: Int, seed: Long = 0L): Either[EngineError, Progress] =
+    step(state, List(Pending(noCard, Effect.Deal(from, to, count), lenient = true)), seed)
+
+  /** Advance a cascade by a single effect: run the head of the queue against the
+    * *given* table and report a `Progress`. The one place a cascade can be steered —
+    * because the caller chooses the table to advance from, a paused cascade resumes
+    * against the player's by-hand changes simply by handing back the live table.
+    * Effects that produce nothing (a drained lenient deal, a deal counted out) are
+    * skipped, so every `Ran` carries real steps.
+    */
+  def step(state: GameState, pending: List[Pending], seed: Long): Either[EngineError, Progress] =
+    pending match
+      case Nil => Right(Progress.Done(state))
+      case Pending(card, effect, lenient) :: rest =>
+        effect match
+          case Effect.Manual(description) =>
+            Right(Progress.Await(state, card, description, rest))
+          case Effect.Shuffle(stack) =>
+            val stackSeed = seed ^ stack.value.hashCode.toLong
+            shuffle(state, stack, stackSeed).map(reordered => Progress.Ran(reordered, List(Step.Shuffle(stack, stackSeed)), rest))
+          case Effect.Deal(_, _, count) if count <= 0 =>
+            step(state, rest, seed)
+          case Effect.Deal(from, to, count) =>
+            // The source may have vanished once its last card left (dropEmpty), so
+            // when lenient a missing or empty stack alike just stops the deal.
+            find(state, from).flatMap(_.cards.headOption.toRight(EmptyStack(from))) match
+              case Left(_) if lenient => step(state, rest, seed)
+              case Left(err)          => Left(err)
+              case Right(top) =>
+                resolveOne(state, top.id, to, seed).map: (moved, steps, triggered) =>
+                  // Reactions resolve before the next dealt card: the move's own
+                  // triggers go ahead of this deal's remaining count and the rest.
+                  Progress.Ran(moved, steps, triggered ++ (Pending(card, Effect.Deal(from, to, count - 1), lenient) :: rest))
+
+  /** The flat step script a drop produces, manual prompts auto-resumed and their
+    * steps concatenated — the headless counterpart of `dropCascade`. */
   def dropSteps(state: GameState, card: CardId, onto: StackId, seed: Long = 0L): Either[EngineError, List[Step]] =
-    resolveMove(state, card, onto, seed).map(_._2)
+    dropCascade(state, card, onto, seed).flatMap(collectSteps(_, seed))
 
-  /** The script a stack button runs: deal *up to* `count` cards from the top of
-    * `from` onto `to`, each relocation cascading through the rules exactly like a
-    * drop. Dealing stops once `from` runs dry, so a button asking for more cards
-    * than the stack holds simply deals them all — a deal-20 button on a 5-card
-    * stack deals 5. Threaded through `Either` only for the per-card failures the
-    * cascade itself can raise.
-    */
+  /** The flat step script a stack button produces, manual prompts auto-resumed —
+    * the headless counterpart of `dealCascade`. */
   def dealSteps(state: GameState, from: StackId, to: StackId, count: Int, seed: Long = 0L): Either[EngineError, List[Step]] =
-    runEffect(state, Effect.Deal(from, to, count), seed, lenient = true).map(_._2)
+    dealCascade(state, from, to, count, seed).flatMap(collectSteps(_, seed))
+
+  /** Relocate `card` onto `to` with no rules fired: a plain move, flipping the card
+    * to match the destination stack's facing exactly as a cascade would. The shell
+    * runs this for drops made *during* a manual pause, where the player is
+    * arranging the table by hand and a drop must not kick off a second cascade.
+    */
+  def moveSteps(state: GameState, card: CardId, to: StackId): Either[EngineError, List[Step]] =
+    for
+      instance <- findCard(state, card).toRight(UnknownCard(card))
+      dest     <- find(state, to)
+    yield Step.Move(card, to) :: Option.when(instance.facing != dest.facing)(Step.Flip(card)).toList
 
   /** Flip a single card between Up and Down; nothing else changes. */
   def flip(state: GameState, card: CardId): Either[EngineError, GameState] =
@@ -138,78 +191,56 @@ object Engine:
       state.copy(stacks = dropEmpty(without :+ created))
 
   // ── the effect system ────────────────────────────────────────────────────
-  // The whole cascade hangs off one mutually-recursive function. `resolveMove`
-  // relocates a card and runs the rules that fires; each of those rules' effects
-  // is more relocations, run by `runDeal`, which calls `resolveMove` again — so
-  // reactions chain naturally until a move triggers nothing. All-or-nothing via
-  // `Either`: the first failure aborts before any step escapes.
+  // A cascade is a queue of pending reactions, advanced one effect at a time by
+  // `step` (above). A `Deal` relocates a card (via `resolveOne`) and *prepends* the
+  // rules that move triggers ahead of the rest, so reactions still resolve
+  // depth-first; a `Manual` stops the queue, handing the remainder back as plain
+  // data. All-or-nothing via `Either`: the first failure aborts before any step
+  // escapes. The headless helpers below drive `step` to the end with no player.
+
+  // A placeholder for a pending with no triggering card — a stack button's
+  // top-level deal. Only a `Manual` ever reads the tag, and only `Manual`s reached
+  // through a real move's reactions (which carry that move's card) ever pause, so
+  // this is never surfaced.
+  private val noCard = CardId("")
 
   /** Relocate `card` onto `to`, turning it to match the destination stack's
-    * `facing` as it lands, emit the resulting "moved onto `to`" event, and run the
-    * effects of every rule that fires on it. Returns the settled state and the
-    * ordered steps it produced.
+    * `facing` as it lands. Returns the settled state, the move's own steps, and the
+    * reactions its arrival triggers — each tagged with `card`, strict — for the
+    * queue to run next. Does not recurse; `step` drives the queue.
     */
-  private def resolveMove(
+  private def resolveOne(
     state: GameState,
     card: CardId,
     to: StackId,
     seed: Long,
-  ): Either[EngineError, (GameState, List[Step])] =
+  ): Either[EngineError, (GameState, List[Step], List[Pending])] =
     for
       instance <- findCard(state, card).toRight(UnknownCard(card))
       dest     <- find(state, to)
       moved    <- move(state, card, to)
-      flips     = Option.when(instance.facing != dest.facing)(Step.Flip(card)).toList
-      flipped   = flips.foldLeft(moved)((s, _) => flip(s, card).getOrElse(s))
-      event     = Event.Moved(card, instance.defId, to)
-      effects   = state.rules.filter(_.trigger.fires(event)).flatMap(_.effects)
-      reacted  <- runEffects(flipped, effects, seed)
-    yield (reacted._1, (Step.Move(card, to) :: flips) ++ reacted._2)
+    yield
+      val flips     = Option.when(instance.facing != dest.facing)(Step.Flip(card)).toList
+      val flipped   = flips.foldLeft(moved)((s, _) => flip(s, card).getOrElse(s))
+      val event     = Event.Moved(card, instance.defId, to)
+      val triggered = state.rules.filter(_.trigger.fires(event)).flatMap(_.effects).map(Pending(card, _))
+      (flipped, Step.Move(card, to) :: flips, triggered)
 
-  /** Run a list of effects in order, threading state and accumulating steps. */
-  private def runEffects(state: GameState, effects: List[Effect], seed: Long): Either[EngineError, (GameState, List[Step])] =
-    effects.foldLeft[Either[EngineError, (GameState, List[Step])]](Right((state, Nil))):
-      (acc, effect) =>
-        acc.flatMap:
-          case (s, steps) => runEffect(s, effect, seed).map((s2, more) => (s2, steps ++ more))
+  /** Drive a cascade to its final table, auto-resuming every pause against the same
+    * state — the headless reading of a `Manual`, which has no player to act on it.
+    * Propagates the first failure, so a headless drop stays all-or-nothing. */
+  private def runToEnd(progress: Progress, seed: Long): Either[EngineError, GameState] = progress match
+    case Progress.Done(s)              => Right(s)
+    case Progress.Ran(s, _, rest)      => step(s, rest, seed).flatMap(runToEnd(_, seed))
+    case Progress.Await(s, _, _, rest) => step(s, rest, seed).flatMap(runToEnd(_, seed))
 
-  /** Run one effect. A `Deal` is `count` single relocations, each resolved (and so
-    * itself able to set off further reactions) by `resolveMove`; strict by default,
-    * a rule effect that over-draws its source aborts the whole cascade (see
-    * `runEffects`), while `lenient` — the form a stack button runs — instead stops
-    * a dry deal early, dealing only what was there. A `Shuffle` reorders one stack
-    * with a per-stack seed derived from `seed`, recording that seed in the step so
-    * replay reproduces the order. */
-  private def runEffect(
-    state: GameState,
-    effect: Effect,
-    seed: Long,
-    lenient: Boolean = false,
-  ): Either[EngineError, (GameState, List[Step])] =
-    effect match
-      case Effect.Deal(from, to, count) =>
-        List.fill(count)(()).foldLeft[Either[EngineError, (GameState, List[Step])]](Right((state, Nil))):
-          (acc, _) =>
-            acc.flatMap:
-              case (s, steps) =>
-                // The source may have vanished once its last card left (dropEmpty),
-                // so when lenient a missing or empty stack alike just stops the deal.
-                find(s, from).flatMap(_.cards.headOption.toRight(EmptyStack(from))) match
-                  case Left(_) if lenient  => Right((s, steps))
-                  case Left(err)           => Left(err)
-                  case Right(top)          => resolveMove(s, top.id, to, seed).map((s2, more) => (s2, steps ++ more))
-      case Effect.Shuffle(stack) =>
-        val stackSeed = seed ^ stack.value.hashCode.toLong
-        shuffle(state, stack, stackSeed).map(reordered => (reordered, List(Step.Shuffle(stack, stackSeed))))
-
-  /** Run a script straight through, ignoring per-step errors the script's own
-    * construction already ruled out. */
-  private def applySteps(state: GameState, steps: List[Step]): GameState =
-    steps.foldLeft(state): (s, step) =>
-      step match
-        case Step.Move(card, to)        => move(s, card, to).getOrElse(s)
-        case Step.Flip(card)            => flip(s, card).getOrElse(s)
-        case Step.Shuffle(stack, seed)  => shuffle(s, stack, seed).getOrElse(s)
+  /** Flatten a cascade to its full step script, auto-resuming pauses and
+    * concatenating each advance's steps — the headless step list, manual prompts
+    * elided. Propagates the first failure, aborting before any step escapes. */
+  private def collectSteps(progress: Progress, seed: Long): Either[EngineError, List[Step]] = progress match
+    case Progress.Done(_)              => Right(Nil)
+    case Progress.Ran(s, steps, rest)  => step(s, rest, seed).flatMap(collectSteps(_, seed)).map(steps ++ _)
+    case Progress.Await(s, _, _, rest) => step(s, rest, seed).flatMap(collectSteps(_, seed))
 
   private def find(state: GameState, id: StackId): Either[EngineError, Stack] =
     state.stacks.find(_.id == id).toRight(UnknownStack(id))
