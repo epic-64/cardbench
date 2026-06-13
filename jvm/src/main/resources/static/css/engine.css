@@ -189,8 +189,9 @@
 }
 
 /* The four optional corner slots, drawn in the layout's shared corner style
-   (background/shape/font set inline by CardFace) and pinned one to each corner.
-   Only non-empty slots are rendered. */
+   (shape/font set inline by CardFace) and pinned one to each corner. The card's
+   accent colour arrives as --corner-bg; the fill mode (set per layout) decides how
+   that colour paints the slot. Only non-empty slots are rendered. */
 .card-corner {
   position: absolute;
   display: flex;
@@ -201,11 +202,21 @@
   padding: 0 0.3em;
   font-size: 0.75em;
   line-height: 1;
-  background: var(--corner-bg, var(--surface));
   border-radius: var(--corner-radius, 50%);
   font-family: var(--corner-font, inherit);
   pointer-events: none;
   overflow: hidden;
+}
+
+/* Fill: solid colour. Outline: just a ring and matching text over a clear slot.
+   None: bare text, no shape at all. */
+.card-corner-fill {
+  background: var(--corner-bg, var(--surface));
+}
+
+.card-corner-outline {
+  border: 1.5px solid var(--corner-bg, var(--surface));
+  color: var(--corner-bg, var(--surface));
 }
 
 .card-corner-tl { top: var(--corner-inset); left: var(--corner-inset); }

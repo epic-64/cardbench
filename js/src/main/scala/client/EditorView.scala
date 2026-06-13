@@ -329,6 +329,7 @@ object EditorView:
             // Fall back to placeholder glyphs so the corner styling is always visible,
             // even when the sample card leaves its own corners blank.
             sample.map(_.corners).filter(hasCorner).getOrElse(sampleCorners),
+            layout.corner.fill,
           ),
         ),
       )
@@ -350,6 +351,7 @@ object EditorView:
             )),
             div(cls := "design-group", h3("Corners"), div(
               cls := "editor-row",
+              selectField("Fill", cornerFillOptions, layout0.corner.fill, f => updateCorner(_.copy(fill = f))),
               selectField("Shape", cornerShapeOptions, layout0.corner.shape, s => updateCorner(_.copy(shape = s))),
               selectField("Font", cornerFontOptions, layout0.corner.font, f => updateCorner(_.copy(font = f))),
             )),
@@ -449,6 +451,7 @@ object EditorView:
   private val layoutOptions      = List("Pile" -> Layout.Pile, "Row" -> Layout.Row)
 
   // The shared look of a card's corner slots, chosen in the design tab.
+  private val cornerFillOptions  = List("Fill" -> CornerFill.Fill, "Outline" -> CornerFill.Outline, "None" -> CornerFill.None)
   private val cornerShapeOptions = List("Circle" -> CornerShape.Circle, "Rounded" -> CornerShape.Rounded, "Square" -> CornerShape.Square)
   private val cornerFontOptions  = List("Default" -> "inherit", "Serif" -> "Georgia, serif", "Mono" -> "monospace", "Rounded" -> "\"Comic Sans MS\", cursive")
 

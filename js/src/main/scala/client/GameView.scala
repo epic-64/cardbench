@@ -532,7 +532,7 @@ object GameView:
             draggable := true,
             dataAttr("card-id") := card.id.value,
             styleAttr := CardFace.accent(d.map(_.color).getOrElse("transparent")),
-            CardFace.boxes(d.map(_.title).getOrElse(card.defId.value), d.map(_.description).getOrElse(""), d.map(_.corners).getOrElse(CardCorners())),
+            CardFace.boxes(d.map(_.title).getOrElse(card.defId.value), d.map(_.description).getOrElse(""), d.map(_.corners).getOrElse(CardCorners()), definition.layout.corner.fill),
             startDrag,
             endDrag,
             flip,
@@ -577,7 +577,7 @@ object GameView:
         cls       := Seq("card", "card-front", "inspect-card"),
         styleAttr := CardFace.accent(d.map(_.color).getOrElse("transparent")),
         title     := "Click to pull this card out of the stack",
-        CardFace.boxes(d.map(_.title).getOrElse(card.defId.value), d.map(_.description).getOrElse(""), d.map(_.corners).getOrElse(CardCorners())),
+        CardFace.boxes(d.map(_.title).getOrElse(card.defId.value), d.map(_.description).getOrElse(""), d.map(_.corners).getOrElse(CardCorners()), definition.layout.corner.fill),
         onClick --> (_ => pullCard(stack, card)),
       )
 
