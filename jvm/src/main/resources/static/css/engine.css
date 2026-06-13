@@ -7,6 +7,8 @@
   --card-font: 1rem; /* the card text size; driven by the in-game A−/A+ control, separate from zoom */
   --stack-control-size: 1.6rem; /* the square side-control buttons (shuffle, move) */
   --stack-control-inset: 0.3rem; /* their offset from the card's bottom-right corner */
+  --corner-inset: 0.3rem; /* how far each corner slot sits in from the card edge */
+  --corner-clear: 1.6em; /* room the title/description leave so corner slots don't overlap text */
 }
 
 /* The board fills whatever the play screen gives it: the play screen is a flex
@@ -163,22 +165,53 @@
   background: var(--card-bg, var(--surface));
 }
 
-/* Title and description are placed absolutely from the shared layout's boxes (left/
-   top/width/height set inline by CardFace), so each game positions its own card
-   text. Overflow is clipped so long text stays inside its box. */
+/* Title and description flow inside the card's padding box: the title sits across
+   the top, the description fills the remaining height beneath it. Overflow is
+   clipped so long text stays within the card. */
 .card-title {
-  position: absolute;
+  flex: 0 0 auto;
   overflow: hidden;
+  /* Clear the two top corner slots so the title sits centred between them. */
+  padding: 0 var(--corner-clear);
+  text-align: center;
   font-weight: 600;
 }
 
 .card-desc {
-  position: absolute;
+  flex: 1 1 auto;
   overflow: hidden;
+  margin-top: 0.3rem;
+  /* Keep the last lines clear of the two bottom corner slots. */
+  padding-bottom: var(--corner-clear);
   color: var(--muted);
   font-size: 0.8em;
   line-height: 1.3;
 }
+
+/* The four optional corner slots, drawn in the layout's shared corner style
+   (background/shape/font set inline by CardFace) and pinned one to each corner.
+   Only non-empty slots are rendered. */
+.card-corner {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5em;
+  height: 1.5em;
+  padding: 0 0.3em;
+  font-size: 0.75em;
+  line-height: 1;
+  background: var(--corner-bg, var(--surface));
+  border-radius: var(--corner-radius, 50%);
+  font-family: var(--corner-font, inherit);
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.card-corner-tl { top: var(--corner-inset); left: var(--corner-inset); }
+.card-corner-tr { top: var(--corner-inset); right: var(--corner-inset); }
+.card-corner-bl { bottom: var(--corner-inset); left: var(--corner-inset); }
+.card-corner-br { bottom: var(--corner-inset); right: var(--corner-inset); }
 
 /* Authored shortcut buttons, below the card and never covering its title or text.
    They sit side by side, wrapping onto the next line once a row (capped to the

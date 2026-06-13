@@ -56,6 +56,13 @@ object EditorView:
           textAreaField("Description", c.description, v => updateCard(i)(_.copy(description = v))),
           div(
             cls := "editor-card-row",
+            textField("↖", c.corners.topLeft, v => updateCard(i)(cd => cd.copy(corners = cd.corners.copy(topLeft = v)))),
+            textField("↗", c.corners.topRight, v => updateCard(i)(cd => cd.copy(corners = cd.corners.copy(topRight = v)))),
+            textField("↙", c.corners.bottomLeft, v => updateCard(i)(cd => cd.copy(corners = cd.corners.copy(bottomLeft = v)))),
+            textField("↘", c.corners.bottomRight, v => updateCard(i)(cd => cd.copy(corners = cd.corners.copy(bottomRight = v)))),
+          ),
+          div(
+            cls := "editor-card-row",
             colorField("Color", c.color, v => updateCard(i)(_.copy(color = v))),
             div(
               cls := "editor-card-actions",
@@ -297,29 +304,17 @@ object EditorView:
     )
 
     // ── card design (layout) ──────────────────────────────────────────────────
-    // One shared template for every card front: a base rectangle (size + fill) with
-    // the title and description boxes placed inside it. A single object, so the panel
-    // is plain controls plus a live preview rather than a list of rows.
+    // One shared template for every card front: a base rectangle (size + fill) whose
+    // title and description flow to fill it, plus the shared styling of the four
+    // corner slots. A single object, so the panel is plain controls plus a live
+    // preview rather than a list of rows.
     def updateLayout(f: CardLayout => CardLayout): Unit =
       draft.update(d => d.copy(layout = f(d.layout)))
-    def updateTitleBox(f: CardBox => CardBox): Unit =
-      updateLayout(l => l.copy(title = f(l.title)))
-    def updateDescBox(f: CardBox => CardBox): Unit =
-      updateLayout(l => l.copy(description = f(l.description)))
-
-    // The X/Y/Width/Height of one positioned box. The fields are uncontrolled — they
-    // read these starting values once and write edits straight back to the draft.
-    def boxFields(b: CardBox, update: (CardBox => CardBox) => Unit): Element =
-      div(
-        cls := "editor-row",
-        numberField("X", b.x, n => update(_.copy(x = n))),
-        numberField("Y", b.y, n => update(_.copy(y = n))),
-        numberField("Width", b.width, n => update(_.copy(width = n))),
-        numberField("Height", b.height, n => update(_.copy(height = n))),
-      )
+    def updateCorner(f: CornerStyle => CornerStyle): Unit =
+      updateLayout(l => l.copy(corner = f(l.corner)))
 
     // The preview redraws whenever the layout or the sample card (the first in the
-    // catalog) changes, so adjusting a box or a colour shows on a real card at once.
+    // catalog) changes, so adjusting a colour or corner shows on a real card at once.
     val previewData = draft.signal.map(d => (d.layout, d.catalog.cards.headOption)).distinct
     def previewCard(layout: CardLayout, sample: Option[CardDef]): Element =
       div(
@@ -329,9 +324,11 @@ object EditorView:
           cls       := "card card-front",
           styleAttr := CardFace.accent(sample.map(_.color).getOrElse("#888888")),
           CardFace.boxes(
-            layout,
             sample.map(_.title).getOrElse("Title"),
             sample.map(_.description).getOrElse("Card description text shows here."),
+            // Fall back to placeholder glyphs so the corner styling is always visible,
+            // even when the sample card leaves its own corners blank.
+            sample.map(_.corners).filter(hasCorner).getOrElse(sampleCorners),
           ),
         ),
       )
@@ -351,8 +348,11 @@ object EditorView:
               numberField("Height", layout0.height, n => updateLayout(_.copy(height = n))),
               colorField("Background", layout0.background, v => updateLayout(_.copy(background = v))),
             )),
-            div(cls := "design-group", h3("Title box"), boxFields(layout0.title, updateTitleBox)),
-            div(cls := "design-group", h3("Description box"), boxFields(layout0.description, updateDescBox)),
+            div(cls := "design-group", h3("Corners"), div(
+              cls := "editor-row",
+              selectField("Shape", cornerShapeOptions, layout0.corner.shape, s => updateCorner(_.copy(shape = s))),
+              selectField("Font", cornerFontOptions, layout0.corner.font, f => updateCorner(_.copy(font = f))),
+            )),
           ),
           div(
             cls := "design-preview-pane",
@@ -447,6 +447,19 @@ object EditorView:
   private val facingOptions      = List("Up" -> Facing.Up, "Down" -> Facing.Down)
   private val arrangementOptions = List("Ordered" -> Arrangement.Ordered, "Shuffled" -> Arrangement.Shuffled)
   private val layoutOptions      = List("Pile" -> Layout.Pile, "Row" -> Layout.Row)
+
+  // The shared look of a card's corner slots, chosen in the design tab.
+  private val cornerShapeOptions = List("Circle" -> CornerShape.Circle, "Rounded" -> CornerShape.Rounded, "Square" -> CornerShape.Square)
+  private val cornerFontOptions  = List("Default" -> "inherit", "Serif" -> "Georgia, serif", "Mono" -> "monospace", "Rounded" -> "\"Comic Sans MS\", cursive")
+
+  // True if a card fills in any of its four corners — drives whether the design
+  // preview shows the card's own corners or placeholder glyphs.
+  private def hasCorner(c: CardCorners): Boolean =
+    Seq(c.topLeft, c.topRight, c.bottomLeft, c.bottomRight).exists(_.nonEmpty)
+
+  // Stand-in corner text for the design preview when the sample card has none, so
+  // the chosen background/shape/font are always visible.
+  private val sampleCorners = CardCorners(topLeft = "★", topRight = "3", bottomLeft = "♦", bottomRight = "✦")
 
   // An effect is a tagged choice too: a single "+ Add effect" button drops in a
   // Deal, and a per-row type select swaps between the kinds, carrying a stack id
