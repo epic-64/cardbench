@@ -218,6 +218,16 @@
   flex-direction: column;
   align-items: center;
   gap: 0.3rem;
+  /* Kept out of the way until the stack is hovered, so the board isn't cluttered
+     by controls on every stack at once. */
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+
+.stack:hover .stack-side {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .stack-inspect,
