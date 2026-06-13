@@ -21,7 +21,12 @@ object EditorView:
     onSave: GameDefinition => Unit,
     onCancel: () => Unit,
   ): Element =
-    val draft = Var(initial)
+    // Every stack lives in a group; there is always at least one. Games authored
+    // before groups existed (their stacks carry no group, or a stale id) are pulled
+    // into a default `group1` here, so the editor never has to special-case an
+    // "ungrouped" state. A lone group is hidden as a group later (see `stacksSection`),
+    // so a simple game still reads as a plain stack list.
+    val draft = Var(EditorView.withDefaultGroup(initial))
 
     // Bumped whenever an effect is reordered. The effect rows otherwise rebuild
     // only when the *kinds* of effects change, so swapping two same-kind effects
@@ -343,12 +348,15 @@ object EditorView:
     def renameGroup(id: String, name: String): Unit =
       setGroups(gs => gs.map(g => if g.id == id then g.copy(name = name) else g))
 
-    // Deleting a group returns its stacks to the ungrouped pool rather than dropping
-    // them, then removes the now-empty group.
+    // Deleting a group moves its stacks into the first remaining group rather than
+    // dropping them. There's always one group, so this only fires when at least two
+    // exist (the delete control is hidden on a lone group — see `stacksSection`).
     def removeGroup(id: String): Unit =
-      setStacks(ss => ss.map(s => if s.group == id then s.copy(group = "") else s))
-      setGroups(gs => gs.filterNot(_.id == id))
-      stackTick.update(_ + 1)
+      val remaining = draft.now().setup.groups.filterNot(_.id == id)
+      remaining.headOption.foreach: target =>
+        setStacks(ss => ss.map(s => if s.group == id then s.copy(group = target.id) else s))
+        setGroups(_ => remaining)
+        stackTick.update(_ + 1)
 
     // Move the dragged stack so it sits just before `target` in the flat list and
     // adopts `target`'s group. Working by id keeps it correct no matter how indices
@@ -375,12 +383,23 @@ object EditorView:
           case None => ss
       stackTick.update(_ + 1)
 
-    // A group's container: a drop target for "move to the end of this group", with
-    // its stack tiles inside. `header` is the group's controls (or a plain label for
-    // the ungrouped bucket); `group` is the id this container drops into.
-    def groupContainer(header: Element, group: String, indices: List[Int]): Element =
+    // Add a fresh stack at the end of `group`, so the new tile lands inside the same
+    // group its "+ Add stack" button sits under.
+    def addStackTo(group: String): Unit =
+      setStacks: ss =>
+        val fresh = StackSpec(StackId("new-stack"), "New Stack", Position(0, 0), Facing.Down, Nil, group = group)
+        val last  = ss.lastIndexWhere(_.group == group)
+        ss.patch(if last < 0 then ss.size else last + 1, List(fresh), 0)
+
+    // A group's container: a drop target for "move to the end of this group", its
+    // stack tiles, and an "+ Add stack" button that adds into this same group.
+    // `header` is the group's controls (empty for a lone, frame-less group); `group`
+    // is the id this container drops into; `bare` drops the grouping frame.
+    def groupContainer(header: Element, group: String, indices: List[Int], bare: Boolean): Element =
       div(
         cls := "editor-stack-group",
+        // A lone group drops its frame so a simple game reads as a plain stack list.
+        cls("editor-stack-group-bare") := bare,
         cls("editor-drag-over") <-- dragOverGroup.signal.map(_.contains(group)),
         onDragOver.preventDefault --> (_ => dragOverGroup.set(Some(group))),
         onDrop.preventDefault --> { _ =>
@@ -392,6 +411,7 @@ object EditorView:
         indices match
           case Nil => div(cls := "editor-stack-group-empty", "Drop a stack here")
           case is  => div(cls := "editor-stacks-grid", is.map(stackRow)),
+        addButton("+ Add stack", () => addStackTo(group)),
       )
 
     def groupHeader(g: StackGroup): Element =
@@ -403,37 +423,23 @@ object EditorView:
 
     // The grouped stack list rebuilds only when the stack count or `stackTick`
     // changes (an add/remove, a drag, or a group add/remove) — never on a keystroke
-    // — then partitions the flat list by group, ungrouped first, each group in its
-    // authored order. A stack whose group id is unknown (e.g. stale data) falls back
-    // to ungrouped so it can never vanish.
-    val stacksBody = div(
+    // — then partitions the flat list by group, each group in its authored order. A
+    // lone group hides its header (rename/delete), so a simple game reads as a plain
+    // stack list; the header appears once a second group exists. The "+ Add group"
+    // button trails the last group; each group carries its own "+ Add stack" (see
+    // `groupContainer`). There's no section card here on purpose — it would only blur
+    // where one group ends and the next begins.
+    val stacksSection = div(
       cls := "editor-stack-groups",
       children <-- draft.signal.map(_.setup.stacks.size).distinct.combineWith(stackTick.signal).map { (_, _) =>
-        val d        = draft.now()
-        val stacks   = d.setup.stacks
-        val groupIds = d.setup.groups.map(_.id).toSet
-        def indicesIn(p: StackSpec => Boolean): List[Int] =
-          stacks.indices.toList.filter(i => p(stacks(i)))
-        // The ungrouped bucket only needs its label once groups exist to tell it
-        // apart from them; on a game with no groups it reads as the plain stack list.
-        val ungroupedHeader = if d.setup.groups.isEmpty then span() else span(cls := "editor-stack-group-label", "Ungrouped")
-        val ungrouped       = groupContainer(ungroupedHeader, "", indicesIn(s => !groupIds.contains(s.group)))
-        ungrouped :: d.setup.groups.map(g => groupContainer(groupHeader(g), g.id, indicesIn(_.group == g.id)))
+        val d      = draft.now()
+        val stacks = d.setup.stacks
+        val solo   = d.setup.groups.sizeIs <= 1
+        def indicesIn(gid: String): List[Int] =
+          stacks.indices.toList.filter(i => stacks(i).group == gid)
+        d.setup.groups.map(g => groupContainer(if solo then span() else groupHeader(g), g.id, indicesIn(g.id), bare = solo))
       },
-    )
-
-    val stacksSection = div(
-      cls := "editor-section",
-      div(
-        cls := "editor-section-head",
-        h2("Stacks"),
-        div(
-          cls := "editor-card-actions",
-          addButton("+ Add group", () => addGroup()),
-          addButton("+ Add stack", () => setStacks(_ :+ StackSpec(StackId("new-stack"), "New Stack", Position(0, 0), Facing.Down, Nil))),
-        ),
-      ),
-      stacksBody,
+      addButton("+ Add group", () => addGroup()),
     )
 
     // ── stack buttons ───────────────────────────────────────────────────────
@@ -613,6 +619,20 @@ object EditorView:
   // The current row count, deduplicated, expanded into one element per index.
   private def indexed(count: Signal[Int], renderRow: Int => Element): Signal[List[Element]] =
     count.distinct.map(n => (0 until n).toList.map(renderRow))
+
+  // The group every stack falls into when a game has none — a normal group that can
+  // be renamed or deleted like any other once more groups exist.
+  private val defaultGroup = StackGroup("group1", "Group 1")
+
+  // Guarantee the invariant the stack editor relies on: at least one group exists and
+  // every stack belongs to one of them. Missing/stale stack groups are pulled into the
+  // first group rather than dropped, so nothing can vanish from the editor.
+  private def withDefaultGroup(d: GameDefinition): GameDefinition =
+    val groups   = if d.setup.groups.isEmpty then List(defaultGroup) else d.setup.groups
+    val ids      = groups.map(_.id).toSet
+    val fallback = groups.head.id
+    val stacks   = d.setup.stacks.map(s => if ids.contains(s.group) then s else s.copy(group = fallback))
+    d.copy(setup = d.setup.copy(groups = groups, stacks = stacks))
 
   private val facingOptions      = List("Up" -> Facing.Up, "Down" -> Facing.Down)
   private val arrangementOptions = List("Ordered" -> Arrangement.Ordered, "Shuffled" -> Arrangement.Shuffled)

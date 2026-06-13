@@ -403,6 +403,24 @@
   transition: border-color 0.15s, background 0.15s;
 }
 
+/* A lone group sheds its frame so a single-group game reads as a plain stack list;
+   the dashed grouping chrome only appears once there's more than one group. */
+.editor-stack-group-bare {
+  padding: 0;
+  border: none;
+}
+
+.editor-stack-group-bare.editor-drag-over {
+  background: transparent;
+}
+
+/* The "+ Add stack" (per group) and "+ Add group" (below the list) read as buttons
+   rather than stretching the full width of their flex column. */
+.editor-stack-group > .btn-add,
+.editor-stack-groups > .btn-add {
+  align-self: flex-start;
+}
+
 /* The group under the drag pointer lights up so the drop destination is obvious. */
 .editor-stack-group.editor-drag-over {
   border-color: var(--accent);
