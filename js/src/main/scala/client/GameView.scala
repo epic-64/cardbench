@@ -285,7 +285,7 @@ object GameView:
 
     // FLIP: the card has just re-rendered at its new home; slide it visually from
     // `from` (where it sat a moment ago) to rest, so the jump reads as a glide.
-    def slide(card: CardId, from: Option[dom.DOMRect]): Unit =
+    def slide(card: CardId, from: Option[dom.DOMRect], durMs: Int): Unit =
       (cardEl(card), from) match
         case (Some(el), Some(f)) =>
           val now = el.getBoundingClientRect()
@@ -296,7 +296,7 @@ object GameView:
           el.style.transition = "none"
           el.style.transform = s"translate(${(f.left - now.left) / z}px, ${(f.top - now.top) / z}px)"
           el.getBoundingClientRect() // force the start offset to register before transitioning
-          el.style.transition = s"transform ${moveAnimMs}ms ease"
+          el.style.transition = s"transform ${durMs}ms ease"
           el.style.transform = "translate(0px, 0px)"
           // The lift is only for the glide; clear it afterwards or the card keeps
           // a z-index of 10 and covers the stack's controls (move handle, shuffle).
@@ -305,27 +305,31 @@ object GameView:
               el.style.zIndex = ""
               el.style.transition = ""
               el.style.transform = "",
-            moveAnimMs,
+            durMs,
           )
         case _ => ()
 
-    def flipReveal(card: CardId): Unit =
-      cardEl(card).foreach(_.classList.add("card-flipping"))
+    def flipReveal(card: CardId, durMs: Int): Unit =
+      cardEl(card).foreach: el =>
+        // Override the CSS animation length inline so bulk flips can run fast; the
+        // JS gate below uses the same duration to advance the script.
+        el.style.animationDuration = s"${durMs}ms"
+        el.classList.add("card-flipping")
 
     // `fromOverride` lets a drop start the dropped card's glide from where the
     // user released it (the floating ghost) instead of its origin — otherwise the
     // card snaps back to its source and slides forward, a move the drag already made.
-    def animateStep(step: Step, fromOverride: Option[dom.DOMRect], done: () => Unit): Unit =
+    def animateStep(step: Step, fromOverride: Option[dom.DOMRect], moveDur: Int, flipDur: Int, done: () => Unit): Unit =
       step match
         case Step.Move(card, to) =>
           val from = fromOverride.orElse(cardEl(card).map(_.getBoundingClientRect()))
           state.update(s => Engine.move(s, card, to).getOrElse(s))
-          slide(card, from)
-          dom.window.setTimeout(() => done(), moveAnimMs)
+          slide(card, from, moveDur)
+          dom.window.setTimeout(() => done(), moveDur)
         case Step.Flip(card) =>
           state.update(s => Engine.flip(s, card).getOrElse(s))
-          flipReveal(card)
-          dom.window.setTimeout(() => done(), flipAnimMs)
+          flipReveal(card, flipDur)
+          dom.window.setTimeout(() => done(), flipDur)
         case Step.Shuffle(stack, seed) =>
           // Mark the stack so it re-renders with the shake class on, reorder it to
           // the seed the cascade rolled, then clear the mark and continue.
@@ -337,10 +341,18 @@ object GameView:
     // `firstFrom` overrides only the first step's glide origin (the dropped card);
     // every reaction step that follows glides from its own real position.
     def runScript(steps: List[Step], firstFrom: Option[dom.DOMRect] = None): Unit =
+      // A play that touches a whole batch of cards (a big deal, sweep, or a stack
+      // migration that flips every card) drags if each card animates at full speed,
+      // so once the script crosses the threshold we shrink every move and flip to
+      // keep the cascade snappy.
+      val touched = steps.count(s => s.isInstanceOf[Step.Move] || s.isInstanceOf[Step.Flip])
+      val bulk    = touched >= bulkMoveThreshold
+      val moveDur = if bulk then bulkMoveAnimMs else moveAnimMs
+      val flipDur = if bulk then bulkFlipAnimMs else flipAnimMs
       def loop(remaining: List[Step], fromOverride: Option[dom.DOMRect]): Unit =
         remaining match
           case Nil          => animating = false
-          case step :: rest => animateStep(step, fromOverride, () => loop(rest, None))
+          case step :: rest => animateStep(step, fromOverride, moveDur, flipDur, () => loop(rest, None))
       animating = true
       loop(steps, firstFrom)
 
@@ -627,3 +639,10 @@ object GameView:
   // by the .card-flipping animation duration in engine.css.
   private val moveAnimMs = 320
   private val flipAnimMs = 320
+
+  // A play touching this many cards or more (moves + flips) animates each step much
+  // faster, so big deals, sweeps, and flip-everything migrations don't crawl through
+  // the whole batch one slow step at a time.
+  private val bulkMoveThreshold = 5
+  private val bulkMoveAnimMs    = 120
+  private val bulkFlipAnimMs    = 120
