@@ -28,6 +28,10 @@ object FineTuneView:
     val snap     = Var(true)
     var drag     = Option.empty[Drag]
     val catalog  = initial.catalog.cards.map(c => c.id -> c).toMap
+    // The shared card template, fixed for the duration of a layout session: drives
+    // both the rendered card faces and the footprint maths so a stack here occupies
+    // exactly what it will in play.
+    val layout   = initial.layout
 
     def setPosition(id: StackId, pos: Position): Unit =
       draft.update: d =>
@@ -45,7 +49,7 @@ object FineTuneView:
       // furthest stack plus room to drag past it.
       styleAttr <-- gridSize.signal.combineWith(draft.signal).map: (g, d) =>
         val (w, h) = canvasExtent(d)
-        s"--grid:${g}px;width:${w}px;height:${h}px",
+        s"--grid:${g}px;width:${w}px;height:${h}px;${CardFace.vars(layout)}",
       children <-- draft.signal.map(_.setup.stacks).distinct.map(_.map(stackBox)),
     )
 
@@ -63,7 +67,7 @@ object FineTuneView:
       // The slot rows span the stack's declared area width (in cards), so the footprint
       // shows how wide the zone is *expected* to be — independent of how many cards it
       // actually holds.
-      val areaW = colsWidth(math.max(1, spec.areaWidth))
+      val areaW = colsWidth(math.max(1, spec.areaWidth), layout.width)
       div(
         cls := "stack tune-draggable",
         cls("stack-row") := (spec.layout == Layout.Row),
@@ -112,7 +116,8 @@ object FineTuneView:
         case many       => div(cls := "zone-row", many)
 
     // A face, dimensionally identical to a real card: a back when face-down, else
-    // a colour-topped front with its title, so stacks stay tellable apart.
+    // the shared layout's front with its title and description, so stacks stay
+    // tellable apart and the footprint matches play exactly.
     def cardFace(defId: CardDefId, facing: Facing, stacked: Boolean): Element =
       val depth = if stacked then Seq("card-stacked") else Nil
       facing match
@@ -122,8 +127,8 @@ object FineTuneView:
           val d = catalog.get(defId)
           div(
             cls       := (Seq("card", "card-front") ++ depth),
-            styleAttr := d.map(c => s"border-top:4px solid ${c.color}").getOrElse(""),
-            div(cls := "card-title", d.map(_.title).getOrElse(defId.value)),
+            styleAttr := CardFace.accent(d.map(_.color).getOrElse("transparent")),
+            CardFace.boxes(layout, d.map(_.title).getOrElse(defId.value), d.map(_.description).getOrElse("")),
           )
 
     def startDrag(e: dom.PointerEvent): Unit =
@@ -190,32 +195,30 @@ object FineTuneView:
   // out past the current edge.
   private def canvasExtent(d: GameDefinition): (Int, Int) =
     val edges = d.setup.stacks.map: s =>
-      val (w, h) = footprint(s)
+      val (w, h) = footprint(s, d.layout)
       (s.position.x + w, s.position.y + h)
     val right  = if edges.isEmpty then 0 else edges.map(_._1).max
     val bottom = if edges.isEmpty then 0 else edges.map(_._2).max
     (math.max(1200, right + 200), math.max(700, bottom + 200))
 
-  // A stack's pixel footprint, mirroring the play board: card dimensions match the
-  // --card-w / --card-h / row gap in engine.css, plus the title and button slot
-  // rows that flank the card and the gaps between all three.
-  private val cardW    = 130
-  private val cardH    = 180
+  // A stack's pixel footprint, mirroring the play board: card dimensions come from
+  // the game's shared layout (the same --card-w / --card-h the board renders at),
+  // plus the title and button slot rows that flank the card and the gaps between all three.
   private val rowGap   = 8
   private val slotH    = 24 // a title / button indicator row
   private val stackGap = 8  // the .stack flex gap between rows (0.5rem)
 
   // The pixel width of n cards laid side by side, matching the play board's row gap.
-  private def colsWidth(n: Int): Int = n * cardW + (n - 1) * rowGap
+  private def colsWidth(n: Int, cardW: Int): Int = n * cardW + (n - 1) * rowGap
 
-  private def footprint(spec: StackSpec): (Int, Int) =
+  private def footprint(spec: StackSpec, layout: CardLayout): (Int, Int) =
     // The wider of the declared area and the cards actually present, so neither the
     // expected zone nor an overflowing row gets clipped by the canvas extent.
     val contentW = spec.layout match
-      case Layout.Row  => colsWidth(math.max(1, cardCount(spec)))
-      case Layout.Pile => cardW + 6 // the layered-deck shadow offset
-    val w = math.max(colsWidth(math.max(1, spec.areaWidth)), contentW)
-    (w, slotH + stackGap + cardH + stackGap + slotH)
+      case Layout.Row  => colsWidth(math.max(1, cardCount(spec)), layout.width)
+      case Layout.Pile => layout.width + 6 // the layered-deck shadow offset
+    val w = math.max(colsWidth(math.max(1, spec.areaWidth), layout.width), contentW)
+    (w, slotH + stackGap + layout.height + stackGap + slotH)
 
   private def expand(spec: StackSpec): List[CardDefId] =
     spec.contents.flatMap(s => List.fill(s.count)(s.card))

@@ -38,6 +38,9 @@ object GameView:
     val initial = GameStore.loadGame(definition.id).map(stacks => fresh.copy(stacks = stacks)).getOrElse(fresh)
     val state   = Var(initial)
     val catalog = fresh.catalog
+    // The on-table card width in board pixels, from the shared layout; used to fan
+    // pulled cards out just clear of their source and to anchor the manual prompt.
+    val cardWidth = definition.layout.width
 
     var dragCard: Option[CardDrag]   = None
     var dragStack: Option[StackDrag] = None
@@ -528,9 +531,8 @@ object GameView:
             cls       := Seq("card", "card-front") ++ depth,
             draggable := true,
             dataAttr("card-id") := card.id.value,
-            styleAttr := d.map(c => s"border-top:4px solid ${c.color}").getOrElse(""),
-            div(cls := "card-title", d.map(_.title).getOrElse(card.defId.value)),
-            div(cls := "card-desc", d.map(_.description).getOrElse("")),
+            styleAttr := CardFace.accent(d.map(_.color).getOrElse("transparent")),
+            CardFace.boxes(definition.layout, d.map(_.title).getOrElse(card.defId.value), d.map(_.description).getOrElse("")),
             startDrag,
             endDrag,
             flip,
@@ -573,10 +575,9 @@ object GameView:
       val d = catalog.get(card.defId)
       div(
         cls       := Seq("card", "card-front", "inspect-card"),
-        styleAttr := d.map(c => s"border-top:4px solid ${c.color}").getOrElse(""),
+        styleAttr := CardFace.accent(d.map(_.color).getOrElse("transparent")),
         title     := "Click to pull this card out of the stack",
-        div(cls := "card-title", d.map(_.title).getOrElse(card.defId.value)),
-        div(cls := "card-desc", d.map(_.description).getOrElse("")),
+        CardFace.boxes(definition.layout, d.map(_.title).getOrElse(card.defId.value), d.map(_.description).getOrElse("")),
         onClick --> (_ => pullCard(stack, card)),
       )
 
@@ -633,9 +634,11 @@ object GameView:
 
     div(
       cls := "play-screen",
-      // The card text size, exposed as a CSS variable the cards inherit. Lives on the
-      // root so it also reaches the inspect overlay's cards, which mount outside the board.
-      styleAttr <-- cardFont.signal.distinct.map(f => s"--card-font:${f}rem"),
+      // The card text size and the shared layout's dimensions/fill, exposed as CSS
+      // variables the cards inherit. Lives on the root so they also reach the inspect
+      // overlay's cards, which mount outside the board. The layout is fixed per game,
+      // so only the live font size drives the signal.
+      styleAttr <-- cardFont.signal.distinct.map(f => s"--card-font:${f}rem;${CardFace.vars(definition.layout)}"),
       // Mirror every settled table into storage so a reload resumes mid-game. The
       // catalog and rules don't change in play, so only the stacks are saved.
       state.signal.map(_.stacks).distinct --> (stacks => GameStore.saveGame(definition.id, stacks)),
@@ -689,9 +692,6 @@ object GameView:
 
   private def clamp(n: Int): Int = math.max(0, n)
 
-  // The on-table card width (px), mirroring --card-w in engine.css; used to fan
-  // pulled cards out just clear of their source stack.
-  private val cardWidth   = 130
   private val cascadeStep = 26
 
   // Wheel zoom: multiplicative step per notch, bounded so the table can't vanish.

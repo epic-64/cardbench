@@ -156,12 +156,25 @@
   );
 }
 
+/* The front carries the layout's shared background; the per-card accent border is
+   applied inline (see CardFace). Falls back to the surface colour if no layout is
+   in scope. */
+.card-front {
+  background: var(--card-bg, var(--surface));
+}
+
+/* Title and description are placed absolutely from the shared layout's boxes (left/
+   top/width/height set inline by CardFace), so each game positions its own card
+   text. Overflow is clipped so long text stays inside its box. */
 .card-title {
+  position: absolute;
+  overflow: hidden;
   font-weight: 600;
 }
 
 .card-desc {
-  margin-top: 0.4rem;
+  position: absolute;
+  overflow: hidden;
   color: var(--muted);
   font-size: 0.8em;
   line-height: 1.3;
