@@ -39,6 +39,15 @@
   padding-bottom: var(--gap);
 }
 
+/* Restore button shown in the corner once the toolbar is hidden. Pinned to the
+   play-screen so it floats over the field as the only way to bring the bar back. */
+.toolbar-restore {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 10;
+}
+
 .toolbar-title {
   flex: 1;
   color: var(--muted);
@@ -120,6 +129,7 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
+  position: relative; /* anchor for the toolbar toggle */
 }
 
 /* ── library ──────────────────────────────────────────────────────────────── */
