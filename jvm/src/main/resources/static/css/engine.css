@@ -175,6 +175,8 @@
   padding: 0 var(--corner-clear);
   text-align: center;
   font-weight: 600;
+  /* Sized by the layout, in em so it tracks the in-game text-size control. */
+  font-size: var(--title-font, 1em);
 }
 
 .card-desc {
@@ -184,7 +186,7 @@
   /* Keep the last lines clear of the two bottom corner slots. */
   padding-bottom: var(--corner-clear);
   color: var(--muted);
-  font-size: 0.8em;
+  font-size: var(--desc-font, 0.8em);
   line-height: 1.3;
 }
 

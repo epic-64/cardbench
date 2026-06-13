@@ -349,6 +349,11 @@ object EditorView:
               numberField("Height", layout0.height, n => updateLayout(_.copy(height = n))),
               colorField("Background", layout0.background, v => updateLayout(_.copy(background = v))),
             )),
+            div(cls := "design-group", h3("Text"), div(
+              cls := "editor-row",
+              numberField("Title %", layout0.titleFont, n => updateLayout(_.copy(titleFont = n))),
+              numberField("Description %", layout0.descriptionFont, n => updateLayout(_.copy(descriptionFont = n))),
+            )),
             div(cls := "design-group", h3("Corners"), div(
               cls := "editor-row",
               selectField("Fill", cornerFillOptions, layout0.corner.fill, f => updateCorner(_.copy(fill = f))),

@@ -22,6 +22,7 @@ object CardFace:
   def vars(layout: CardLayout): String =
     val c = layout.corner
     s"--card-w:${layout.width}px;--card-h:${layout.height}px;--card-bg:${layout.background};" +
+      s"--title-font:${layout.titleFont / 100.0}em;--desc-font:${layout.descriptionFont / 100.0}em;" +
       s"--corner-radius:${cornerRadius(c.shape)};--corner-font:${c.font}"
 
   /** The accent rule for a card front: a top border in the card's own colour, laid
