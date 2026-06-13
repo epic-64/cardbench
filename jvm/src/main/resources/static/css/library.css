@@ -43,6 +43,21 @@
   font-size: 0.95rem;
 }
 
+/* Card-text size stepper: the two A−/A+ buttons hug a live percentage readout. */
+.font-control {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.font-control-value {
+  min-width: 3rem;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
 .btn {
   font: inherit;
   font-size: 0.85rem;

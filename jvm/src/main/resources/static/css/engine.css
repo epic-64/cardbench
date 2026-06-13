@@ -4,6 +4,7 @@
   --card-w: 130px;
   --card-h: 180px;
   --card-radius: 8px;
+  --card-font: 1rem; /* the card text size; driven by the in-game A−/A+ control, separate from zoom */
   --stack-control-size: 1.6rem; /* the square side-control buttons (shuffle, move) */
   --stack-control-inset: 0.3rem; /* their offset from the card's bottom-right corner */
 }
@@ -81,6 +82,9 @@
   flex-direction: column;
   cursor: grab;
   user-select: none;
+  /* Card text scales off this; title/desc use em so one variable resizes both. */
+  font-size: var(--card-font);
+  overflow: hidden;
 }
 
 /* Centered mark on a pile that's freshly shuffled and untouched since. */
@@ -159,7 +163,7 @@
 .card-desc {
   margin-top: 0.4rem;
   color: var(--muted);
-  font-size: 0.8rem;
+  font-size: 0.8em;
   line-height: 1.3;
 }
 

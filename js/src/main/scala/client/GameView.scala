@@ -73,6 +73,11 @@ object GameView:
     val zoom = Var(1.0)
     var panning: Option[(Double, Double, Position)] = None // pointer-down client x/y + pan at grab
 
+    // Card text size, in rem — a multiplier on the card font driven by the A−/A+
+    // toolbar controls. Independent of zoom: zoom scales the whole table
+    // geometrically, this resizes only the text so cards stay readable at any zoom.
+    val cardFont = Var(1.0)
+
     lazy val world: HtmlElement = div(
       cls := "world",
       styleAttr <-- pan.signal
@@ -543,6 +548,9 @@ object GameView:
 
     div(
       cls := "play-screen",
+      // The card text size, exposed as a CSS variable the cards inherit. Lives on the
+      // root so it also reaches the inspect overlay's cards, which mount outside the board.
+      styleAttr <-- cardFont.signal.distinct.map(f => s"--card-font:${f}rem"),
       // Mirror every settled table into storage so a reload resumes mid-game. The
       // catalog and rules don't change in play, so only the stacks are saved.
       state.signal.map(_.stacks).distinct --> (stacks => GameStore.saveGame(definition.id, stacks)),
@@ -561,6 +569,24 @@ object GameView:
           title := "Discard this game and deal a fresh setup",
           "↻ Restart game",
           onClick --> (_ => restartGame()),
+        ),
+        // Card text size — independent of zoom. Bounded so the text can't vanish or
+        // swamp the card; one notch per click.
+        div(
+          cls := "font-control",
+          button(
+            cls   := "btn",
+            title := "Smaller card text",
+            "A−",
+            onClick --> (_ => cardFont.update(f => (f / fontStep).max(minFont))),
+          ),
+          span(cls := "font-control-value", child.text <-- cardFont.signal.map(f => s"${(f * 100).round}%").distinct),
+          button(
+            cls   := "btn",
+            title := "Larger card text",
+            "A+",
+            onClick --> (_ => cardFont.update(f => (f * fontStep).min(maxFont))),
+          ),
         ),
       ),
       div(cls := "game", board),
@@ -587,6 +613,12 @@ object GameView:
   private val zoomStep = 1.1
   private val minZoom  = 0.3
   private val maxZoom  = 3.0
+
+  // Card text size (rem multiplier): one notch per A−/A+ click, bounded so the
+  // text stays legible without overflowing the fixed-size card.
+  private val fontStep = 1.1
+  private val minFont  = 0.6
+  private val maxFont  = 2.0
 
   // Kept in step with the .stack.shuffling animation duration in engine.css.
   private val shuffleAnimMs = 450
