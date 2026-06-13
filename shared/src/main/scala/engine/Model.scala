@@ -112,6 +112,39 @@ case class CardDef(
   description: String,
 ) derives ReadWriter
 
+/** A positioned, sized box inside a card, in card-local pixels measured from the
+  * card's top-left corner: where one piece of card content — the title, the
+  * description — sits within the base rectangle.
+  */
+case class CardBox(x: Int, y: Int, width: Int, height: Int) derives ReadWriter
+
+/** The shared visual template every card front is drawn from. The base rectangle
+  * is `width`×`height` pixels filled with `background`; the `title` and
+  * `description` boxes place each piece of text inside it. One layout serves the
+  * whole game — a card supplies only its own content and accent colour (see
+  * `CardDef`), the layout says how big the card is and where the text sits.
+  */
+case class CardLayout(
+  width: Int,
+  height: Int,
+  background: String,
+  title: CardBox,
+  description: CardBox,
+) derives ReadWriter
+
+object CardLayout:
+  /** Mirrors the original fixed CSS card: a 130×180 dark surface with the title
+    * across the top and the description filling the body beneath it. Used for any
+    * game authored before card layouts existed, so its cards look unchanged.
+    */
+  val default: CardLayout = CardLayout(
+    width = 130,
+    height = 180,
+    background = "#16161f",
+    title = CardBox(x = 10, y = 10, width = 110, height = 24),
+    description = CardBox(x = 10, y = 42, width = 110, height = 126),
+  )
+
 /** A physical card on the table: one instance of a definition. */
 case class CardInstance(id: CardId, defId: CardDefId, facing: Facing) derives ReadWriter
 

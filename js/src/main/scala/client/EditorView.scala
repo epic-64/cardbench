@@ -296,6 +296,72 @@ object EditorView:
       buttonRow,
     )
 
+    // ── card design (layout) ──────────────────────────────────────────────────
+    // One shared template for every card front: a base rectangle (size + fill) with
+    // the title and description boxes placed inside it. A single object, so the panel
+    // is plain controls plus a live preview rather than a list of rows.
+    def updateLayout(f: CardLayout => CardLayout): Unit =
+      draft.update(d => d.copy(layout = f(d.layout)))
+    def updateTitleBox(f: CardBox => CardBox): Unit =
+      updateLayout(l => l.copy(title = f(l.title)))
+    def updateDescBox(f: CardBox => CardBox): Unit =
+      updateLayout(l => l.copy(description = f(l.description)))
+
+    // The X/Y/Width/Height of one positioned box. The fields are uncontrolled — they
+    // read these starting values once and write edits straight back to the draft.
+    def boxFields(b: CardBox, update: (CardBox => CardBox) => Unit): Element =
+      div(
+        cls := "editor-row",
+        numberField("X", b.x, n => update(_.copy(x = n))),
+        numberField("Y", b.y, n => update(_.copy(y = n))),
+        numberField("Width", b.width, n => update(_.copy(width = n))),
+        numberField("Height", b.height, n => update(_.copy(height = n))),
+      )
+
+    // The preview redraws whenever the layout or the sample card (the first in the
+    // catalog) changes, so adjusting a box or a colour shows on a real card at once.
+    val previewData = draft.signal.map(d => (d.layout, d.catalog.cards.headOption)).distinct
+    def previewCard(layout: CardLayout, sample: Option[CardDef]): Element =
+      div(
+        cls       := "design-preview",
+        styleAttr := CardFace.vars(layout),
+        div(
+          cls       := "card card-front",
+          styleAttr := CardFace.accent(sample.map(_.color).getOrElse("#888888")),
+          CardFace.boxes(
+            layout,
+            sample.map(_.title).getOrElse("Title"),
+            sample.map(_.description).getOrElse("Card description text shows here."),
+          ),
+        ),
+      )
+
+    val layout0 = draft.now().layout
+    val designSection =
+      div(
+        cls := "editor-section",
+        div(cls := "editor-section-head", h2("Card Design")),
+        div(
+          cls := "design-layout",
+          div(
+            cls := "design-controls",
+            div(cls := "design-group", h3("Base rectangle"), div(
+              cls := "editor-row",
+              numberField("Width", layout0.width, n => updateLayout(_.copy(width = n))),
+              numberField("Height", layout0.height, n => updateLayout(_.copy(height = n))),
+              colorField("Background", layout0.background, v => updateLayout(_.copy(background = v))),
+            )),
+            div(cls := "design-group", h3("Title box"), boxFields(layout0.title, updateTitleBox)),
+            div(cls := "design-group", h3("Description box"), boxFields(layout0.description, updateDescBox)),
+          ),
+          div(
+            cls := "design-preview-pane",
+            span(cls := "design-preview-hint", "Live preview"),
+            child <-- previewData.map((l, s) => previewCard(l, s)),
+          ),
+        ),
+      )
+
     def finalised(): GameDefinition =
       val d = draft.now()
       if d.name.trim.isEmpty then d.copy(name = "Untitled") else d
@@ -345,11 +411,13 @@ object EditorView:
         div(
           cls := "editor-tabs",
           tabButton("cards", "Cards"),
+          tabButton("design", "Design"),
           tabButton("stacks", "Stacks"),
           tabButton("buttons", "Buttons"),
           tabButton("rules", "Rules"),
         ),
         tabPanel("cards", cardsSection),
+        tabPanel("design", designSection),
         tabPanel("stacks", stacksSection),
         tabPanel("buttons", buttonsSection),
         tabPanel("rules", rulesSection),

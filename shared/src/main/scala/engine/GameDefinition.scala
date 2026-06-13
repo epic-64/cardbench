@@ -14,4 +14,5 @@ case class GameDefinition(
   catalog: CardCatalog,
   rulebook: Rulebook,
   setup: GameSetup,
+  layout: CardLayout = CardLayout.default, // the shared card template; defaulted so games authored before it load unchanged
 ) derives ReadWriter

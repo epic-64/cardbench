@@ -2,6 +2,8 @@
 
 :root {
   --gap-sm: 0.5rem;
+  --gap-md: 1rem;
+  --gap-lg: 1.5rem;
   --field-bg: #0f0f17;
   --danger: #f87171;
   --danger-border: rgba(248, 113, 113, 0.4);
@@ -368,6 +370,66 @@
   flex-wrap: wrap;
   align-items: flex-end;
   gap: var(--gap-sm);
+}
+
+/* ── card design ──────────────────────────────────────────────────────────── */
+
+/* The design tab splits in two: the box controls on the left, a live card preview
+   on the right. Wraps to a single column once the row runs out of room. */
+.design-layout {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap-lg);
+  align-items: flex-start;
+}
+
+.design-controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-md);
+  flex: 1;
+  min-width: 280px;
+}
+
+/* A titled cluster of fields — the base rectangle, or one positioned box. */
+.design-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-sm);
+  background: var(--field-bg);
+  border: var(--border);
+  border-radius: var(--card-radius);
+  padding: var(--gap-sm);
+}
+
+.design-group h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--muted);
+}
+
+/* The preview pane keeps the rendered card pinned beside the controls as they
+   scroll past on a tall form. */
+.design-preview-pane {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--gap-sm);
+  position: sticky;
+  top: var(--gap-md);
+}
+
+.design-preview-hint {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+/* Sized by the layout's own --card-w/--card-h (set inline by CardFace) so the
+   preview footprint tracks the base rectangle exactly. */
+.design-preview {
+  position: relative;
+  width: var(--card-w);
+  height: var(--card-h);
 }
 
 /* ── rules ────────────────────────────────────────────────────────────────── */
