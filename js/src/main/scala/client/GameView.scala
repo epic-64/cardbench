@@ -95,6 +95,12 @@ object GameView:
         .distinct
         .map((p, z) => s"transform:translate(${p.x}px,${p.y}px) scale($z)"),
       children <-- state.signal.map(_.stacks).distinct.map(_.map(stackView)),
+      // The manual-effect prompt lives inside the world, anchored beside its card in
+      // board coordinates, so it pans and zooms with the camera like any stack.
+      child <-- manualPause.signal.map {
+        case Some(prompt) => manualDialog(prompt)
+        case None         => emptyNode
+      },
     )
 
     lazy val board: HtmlElement = div(
@@ -593,18 +599,20 @@ object GameView:
         ),
       )
 
-    // The manual-effect prompt: a small, non-modal dialog anchored just under the
-    // card whose arrival paused the cascade (centred as a fallback if that card has
-    // since left the table). Non-modal on purpose — the board stays live so the
-    // player can carry out the effect by hand; only "Done" resumes the cascade.
+    // The manual-effect prompt: a small, non-modal dialog living inside the world,
+    // placed just to the right of the card whose arrival paused the cascade — in
+    // board coordinates, so it rides the camera's pan and zoom. It tracks the card
+    // for as long as it exists: should the player drag the card to another stack
+    // mid-pause, the dialog follows it there. Non-modal on purpose — the board stays
+    // live so the player can carry the effect out by hand; only "Done" resumes.
     def manualDialog(prompt: ManualPrompt): Element =
-      val anchor = cardEl(prompt.card).map(_.getBoundingClientRect())
-      val position = anchor match
-        case Some(r) => s"position:fixed;left:${r.left}px;top:${r.bottom + 8}px"
-        case None    => "position:fixed;left:50%;top:40%;transform:translate(-50%,-50%)"
+      val anchor = state.signal.map(_.stacks.find(_.cards.exists(_.id == prompt.card)).map(_.position)).distinct
       div(
-        cls       := "manual-dialog",
-        styleAttr := position,
+        cls := "manual-dialog",
+        styleAttr <-- anchor.map {
+          case Some(p) => s"left:${p.x + cardWidth + 8}px;top:${p.y}px"
+          case None    => "display:none" // the card has left the table — nothing to anchor to
+        },
         div(cls := "manual-desc", prompt.description),
         button(cls := "btn btn-primary", "Done", onClick --> (_ => completeManual(prompt))),
       )
@@ -677,11 +685,6 @@ object GameView:
           open.flatMap(id => s.stacks.find(_.id == id)) match
             case Some(stack) if stack.cards.nonEmpty => inspectOverlay(stack)
             case _                                   => emptyNode,
-      // The manual-effect prompt, when a cascade is paused waiting on the player.
-      child <-- manualPause.signal.map {
-        case Some(prompt) => manualDialog(prompt)
-        case None         => emptyNode
-      },
     )
 
   private def clamp(n: Int): Int = math.max(0, n)
