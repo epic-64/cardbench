@@ -91,6 +91,10 @@ object GameView:
     // geometrically, this resizes only the text so cards stay readable at any zoom.
     val cardFont = Var(1.0)
 
+    // Whether the top toolbar is shown. Hiding it hands its whole height to the
+    // playing field; a small corner toggle stays put to bring it back.
+    val toolbarVisible = Var(true)
+
     lazy val world: HtmlElement = div(
       cls := "world",
       styleAttr <-- pan.signal
@@ -644,6 +648,7 @@ object GameView:
       state.signal.map(_.stacks).distinct --> (stacks => GameStore.saveGame(definition.id, stacks)),
       div(
         cls := "toolbar",
+        display <-- toolbarVisible.signal.map(v => if v then "flex" else "none").distinct,
         button(cls := "btn", "← Library", onClick --> (_ => onBack())),
         span(cls := "toolbar-title", definition.name),
         button(
@@ -676,6 +681,22 @@ object GameView:
             onClick --> (_ => cardFont.update(f => (f * fontStep).min(maxFont))),
           ),
         ),
+        // Collapses the bar to hand its height to the field. A natural last item in
+        // the row so it matches the other buttons' size and alignment.
+        button(
+          cls   := "btn",
+          title := "Hide the top bar",
+          "▲ Hide bar",
+          onClick --> (_ => toolbarVisible.set(false)),
+        ),
+      ),
+      // The only affordance left once the bar is gone — a corner button to bring it back.
+      button(
+        cls   := "btn toolbar-restore",
+        title := "Show the top bar",
+        display <-- toolbarVisible.signal.map(v => if v then "none" else "block").distinct,
+        "▼ Show bar",
+        onClick --> (_ => toolbarVisible.set(true)),
       ),
       div(cls := "game", board),
       // The inspect overlay, when a lens is open. Driven by both the open stack and
