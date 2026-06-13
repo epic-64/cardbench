@@ -35,21 +35,27 @@ object CardFace:
     * base rectangle, plus any non-empty corner slots. Spliced into the card root
     * alongside its drag handlers.
     */
-  def boxes(title: String, description: String, corners: CardCorners): Seq[Node] =
+  def boxes(title: String, description: String, corners: CardCorners, fill: CornerFill): Seq[Node] =
     Seq(
       div(cls := "card-title", title),
       div(cls := "card-desc", description),
-    ) ++ cornerNodes(corners)
+    ) ++ cornerNodes(corners, fill)
 
-  private def cornerNodes(c: CardCorners): Seq[Node] =
+  private def cornerNodes(c: CardCorners, fill: CornerFill): Seq[Node] =
+    val mode = fillClass(fill)
     Seq(
       "card-corner-tl" -> c.topLeft,
       "card-corner-tr" -> c.topRight,
       "card-corner-bl" -> c.bottomLeft,
       "card-corner-br" -> c.bottomRight,
-    ).collect { case (slot, text) if text.nonEmpty => div(cls := Seq("card-corner", slot), text) }
+    ).collect { case (slot, text) if text.nonEmpty => div(cls := Seq("card-corner", slot, mode), text) }
 
   private def cornerRadius(shape: CornerShape): String = shape match
     case CornerShape.Circle  => "50%"
     case CornerShape.Rounded => "5px"
     case CornerShape.Square  => "0"
+
+  private def fillClass(fill: CornerFill): String = fill match
+    case CornerFill.Fill    => "card-corner-fill"
+    case CornerFill.Outline => "card-corner-outline"
+    case CornerFill.None    => "card-corner-none"

@@ -147,13 +147,38 @@ object CornerShape:
     },
   )
 
+/** How a corner slot's shape is painted with the card's accent colour. `Fill` fills
+  * it solid, `Outline` draws only its border (and the text) in that colour over a
+  * transparent slot, and `None` drops the shape entirely, leaving bare text.
+  */
+enum CornerFill:
+  case Fill, Outline, None
+
+object CornerFill:
+  // Lowercase on the wire, matching the rest of the authored layout JSON.
+  given ReadWriter[CornerFill] = readwriter[String].bimap(
+    {
+      case CornerFill.Fill    => "fill"
+      case CornerFill.Outline => "outline"
+      case CornerFill.None    => "none"
+    },
+    {
+      case "fill"    => CornerFill.Fill
+      case "outline" => CornerFill.Outline
+      case "none"    => CornerFill.None
+      case other     => sys.error(s"Unknown corner fill: $other")
+    },
+  )
+
 /** How every card's corner slots are drawn — one shared style across the game, set
-  * in the designer. `shape` outlines the slot and `font` is its CSS font-family;
-  * the fill is each card's own accent colour (see `CardDef.color`), not authored
-  * here. The text inside each slot is per-card (see `CardCorners`).
+  * in the designer. `shape` outlines the slot, `fill` says how the card's accent
+  * colour paints it, and `font` is its CSS font-family. The fill colour is each
+  * card's own accent (see `CardDef.color`), not authored here; the text inside each
+  * slot is per-card (see `CardCorners`).
   */
 case class CornerStyle(
   shape: CornerShape,
+  fill: CornerFill,
   font: String,
 ) derives ReadWriter
 
@@ -170,7 +195,7 @@ case class CardLayout(
   background: String,
   // Defaulted so games saved before corner styling existed (their layout has no
   // `corner` field) still load, picking up the standard corner look.
-  corner: CornerStyle = CornerStyle(shape = CornerShape.Circle, font = "inherit"),
+  corner: CornerStyle = CornerStyle(shape = CornerShape.Circle, fill = CornerFill.Fill, font = "inherit"),
 ) derives ReadWriter
 
 object CardLayout:
