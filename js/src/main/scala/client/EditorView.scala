@@ -234,6 +234,10 @@ object EditorView:
 
     def stackRow(i: Int): Element =
       val s = draft.now().setup.stacks(i)
+      // Width only applies to a Row — a Pile is always one card wide — so the field
+      // appears and disappears as the layout select changes (the row itself only
+      // rebuilds on add/remove, so this has to be its own signal).
+      val isRow = draft.signal.map(_.setup.stacks.lift(i).fold(false)(_.layout == Layout.Row)).distinct
       div(
         cls := "editor-stack",
         div(
@@ -251,7 +255,9 @@ object EditorView:
           selectField("Facing", facingOptions, s.facing, f => updateStack(i)(_.copy(facing = f))),
           selectField("Arrangement", arrangementOptions, s.arrangement, a => updateStack(i)(_.copy(arrangement = a))),
           selectField("Layout", layoutOptions, s.layout, l => updateStack(i)(_.copy(layout = l))),
-          numberField("Width", s.areaWidth, n => updateStack(i)(_.copy(width = Some(n)))),
+          child <-- isRow.map:
+            case true  => numberField("Width", draft.now().setup.stacks.lift(i).fold(3)(_.areaWidth), n => updateStack(i)(_.copy(width = Some(n))))
+            case false => emptyNode,
         ),
         contentsSubsection(i),
       )

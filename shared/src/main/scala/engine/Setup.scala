@@ -42,12 +42,11 @@ case class StackSpec(
 ) derives ReadWriter:
   /** How many cards wide this stack's area is expected to be, used by the layout
     * editor to size its footprint. A planning hint only — it never caps the card
-    * count. Defaults by layout when unset: a `Pile` reserves one card, a `Row` three.
+    * count. A `Pile` is always one card wide; a `Row` uses its set `width`, or three.
     */
-  def areaWidth: Int = width.getOrElse:
-    layout match
-      case Layout.Pile => 1
-      case Layout.Row  => 3
+  def areaWidth: Int = layout match
+    case Layout.Pile => 1
+    case Layout.Row  => width.getOrElse(3)
 
 /** What a stack button does when clicked. Each action deals cards between the
   * button's own stack and one other: `DealFrom` draws `count` cards *into* the
