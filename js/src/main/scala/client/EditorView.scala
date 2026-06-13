@@ -29,6 +29,19 @@ object EditorView:
     // forces the rebuild that re-reads each row's new position.
     val reorderTick = Var(0)
 
+    // Bumped whenever stacks are regrouped or reordered (by drag and drop) or a
+    // group is added/removed. The stack rows otherwise rebuild only when their
+    // *count* changes, so a reorder that keeps the count would leave the rows
+    // showing their old positions — this tick forces the rebuild that re-reads
+    // each row's new index. Renaming a group does *not* bump it, so typing in a
+    // group's name never rebuilds the rows beneath it (and never steals focus).
+    val stackTick = Var(0)
+
+    // The stack currently being dragged, and the group its pointer is hovering over
+    // — drives the drop logic and the drop-target highlight respectively.
+    val draggedStack = Var(Option.empty[StackId])
+    val dragOverGroup = Var(Option.empty[String])
+
     // The live id pools the reference drop-downs choose from: card ids for triggers
     // and stack contents, stack ids for triggers and effects. `.distinct` keeps a
     // box from rebuilding unless the *set of ids* actually changes (not on every
@@ -240,8 +253,28 @@ object EditorView:
       val isRow = draft.signal.map(_.setup.stacks.lift(i).fold(false)(_.layout == Layout.Row)).distinct
       div(
         cls := "editor-stack",
+        // Drop onto a stack tile = drop the dragged stack *before* this one, into
+        // this stack's group. The id is read live so an in-flight id edit can't
+        // make the target stale; a drop onto itself is a no-op.
+        onDragOver.preventDefault --> (_ => ()),
+        onDrop.preventDefault.stopPropagation --> { _ =>
+          draggedStack.now().foreach: dragged =>
+            draft.now().setup.stacks.lift(i).map(_.id).foreach(target => moveStackBefore(dragged, target))
+          draggedStack.set(None)
+          dragOverGroup.set(None)
+        },
         div(
           cls := "editor-stack-head",
+          // The handle is the only draggable part, so the tile's inputs stay fully
+          // editable (a draggable container would swallow text selection).
+          span(
+            cls := "editor-drag-handle",
+            title := "Drag to reorder or move between groups",
+            draggable := true,
+            "⠿",
+            onDragStart --> (_ => draggedStack.set(draft.now().setup.stacks.lift(i).map(_.id))),
+            onDragEnd --> { _ => draggedStack.set(None); dragOverGroup.set(None) },
+          ),
           textField("Id", s.id.value, v => updateStack(i)(_.copy(id = StackId(v)))),
           textField("Label", s.label, v => updateStack(i)(_.copy(label = v))),
           div(
@@ -291,13 +324,116 @@ object EditorView:
         ),
       )
 
-    val stacksSection = section(
-      "Stacks",
-      "+ Add stack",
-      () => setStacks(_ :+ StackSpec(StackId("new-stack"), "New Stack", Position(0, 0), Facing.Down, Nil)),
-      draft.signal.map(_.setup.stacks.size),
-      stackRow,
-      rowsClass = "editor-stacks-grid",
+    // ── stack groups (editor-only organisation) ───────────────────────────────
+    def setGroups(f: List[StackGroup] => List[StackGroup]): Unit =
+      draft.update(d => d.copy(setup = d.setup.copy(groups = f(d.setup.groups))))
+
+    // A fresh group id that can't collide with an existing one, even across many
+    // adds in one session (timestamps could repeat) — the suffix keeps it unique.
+    def freshGroupId(): String =
+      val taken = draft.now().setup.groups.map(_.id).toSet
+      LazyList.from(0).map(n => s"group-$n").find(!taken.contains(_)).get
+
+    def addGroup(): Unit =
+      setGroups(_ :+ StackGroup(freshGroupId(), "New Group"))
+      stackTick.update(_ + 1)
+
+    // Rename touches only the label, so stacks keep referencing the group by its
+    // stable id — and it deliberately skips `stackTick`, so typing never rebuilds.
+    def renameGroup(id: String, name: String): Unit =
+      setGroups(gs => gs.map(g => if g.id == id then g.copy(name = name) else g))
+
+    // Deleting a group returns its stacks to the ungrouped pool rather than dropping
+    // them, then removes the now-empty group.
+    def removeGroup(id: String): Unit =
+      setStacks(ss => ss.map(s => if s.group == id then s.copy(group = "") else s))
+      setGroups(gs => gs.filterNot(_.id == id))
+      stackTick.update(_ + 1)
+
+    // Move the dragged stack so it sits just before `target` in the flat list and
+    // adopts `target`'s group. Working by id keeps it correct no matter how indices
+    // shifted; dropping a stack before itself is a no-op.
+    def moveStackBefore(dragged: StackId, target: StackId): Unit =
+      if dragged != target then
+        setStacks: ss =>
+          (ss.find(_.id == dragged), ss.find(_.id == target)) match
+            case (Some(m), Some(t)) =>
+              val without = ss.filterNot(_.id == dragged)
+              without.patch(without.indexWhere(_.id == target), List(m.copy(group = t.group)), 0)
+            case _ => ss
+        stackTick.update(_ + 1)
+
+    // Move the dragged stack to the end of `group` — used when a stack is dropped on
+    // a group's empty area rather than on another stack.
+    def moveStackToGroupEnd(dragged: StackId, group: String): Unit =
+      setStacks: ss =>
+        ss.find(_.id == dragged) match
+          case Some(m) =>
+            val without = ss.filterNot(_.id == dragged)
+            val last    = without.lastIndexWhere(_.group == group)
+            without.patch(if last < 0 then without.size else last + 1, List(m.copy(group = group)), 0)
+          case None => ss
+      stackTick.update(_ + 1)
+
+    // A group's container: a drop target for "move to the end of this group", with
+    // its stack tiles inside. `header` is the group's controls (or a plain label for
+    // the ungrouped bucket); `group` is the id this container drops into.
+    def groupContainer(header: Element, group: String, indices: List[Int]): Element =
+      div(
+        cls := "editor-stack-group",
+        cls("editor-drag-over") <-- dragOverGroup.signal.map(_.contains(group)),
+        onDragOver.preventDefault --> (_ => dragOverGroup.set(Some(group))),
+        onDrop.preventDefault --> { _ =>
+          draggedStack.now().foreach(dragged => moveStackToGroupEnd(dragged, group))
+          draggedStack.set(None)
+          dragOverGroup.set(None)
+        },
+        header,
+        indices match
+          case Nil => div(cls := "editor-stack-group-empty", "Drop a stack here")
+          case is  => div(cls := "editor-stacks-grid", is.map(stackRow)),
+      )
+
+    def groupHeader(g: StackGroup): Element =
+      div(
+        cls := "editor-stack-group-head",
+        textField("Group name", g.name, v => renameGroup(g.id, v)),
+        removeButton(() => removeGroup(g.id)),
+      )
+
+    // The grouped stack list rebuilds only when the stack count or `stackTick`
+    // changes (an add/remove, a drag, or a group add/remove) — never on a keystroke
+    // — then partitions the flat list by group, ungrouped first, each group in its
+    // authored order. A stack whose group id is unknown (e.g. stale data) falls back
+    // to ungrouped so it can never vanish.
+    val stacksBody = div(
+      cls := "editor-stack-groups",
+      children <-- draft.signal.map(_.setup.stacks.size).distinct.combineWith(stackTick.signal).map { (_, _) =>
+        val d        = draft.now()
+        val stacks   = d.setup.stacks
+        val groupIds = d.setup.groups.map(_.id).toSet
+        def indicesIn(p: StackSpec => Boolean): List[Int] =
+          stacks.indices.toList.filter(i => p(stacks(i)))
+        // The ungrouped bucket only needs its label once groups exist to tell it
+        // apart from them; on a game with no groups it reads as the plain stack list.
+        val ungroupedHeader = if d.setup.groups.isEmpty then span() else span(cls := "editor-stack-group-label", "Ungrouped")
+        val ungrouped       = groupContainer(ungroupedHeader, "", indicesIn(s => !groupIds.contains(s.group)))
+        ungrouped :: d.setup.groups.map(g => groupContainer(groupHeader(g), g.id, indicesIn(_.group == g.id)))
+      },
+    )
+
+    val stacksSection = div(
+      cls := "editor-section",
+      div(
+        cls := "editor-section-head",
+        h2("Stacks"),
+        div(
+          cls := "editor-card-actions",
+          addButton("+ Add group", () => addGroup()),
+          addButton("+ Add stack", () => setStacks(_ :+ StackSpec(StackId("new-stack"), "New Stack", Position(0, 0), Facing.Down, Nil))),
+        ),
+      ),
+      stacksBody,
     )
 
     // ── stack buttons ───────────────────────────────────────────────────────

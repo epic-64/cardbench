@@ -382,6 +382,82 @@
   gap: var(--gap-sm);
 }
 
+/* ── stack groups ─────────────────────────────────────────────────────────── */
+
+/* The grouped stack list: the ungrouped bucket followed by each named group,
+   stacked vertically with the same rhythm as the rest of the editor. */
+.editor-stack-groups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-md);
+}
+
+/* One group: a labelled, droppable region the stack tiles live inside. */
+.editor-stack-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-sm);
+  padding: var(--gap-sm);
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius);
+  transition: border-color 0.15s, background 0.15s;
+}
+
+/* The group under the drag pointer lights up so the drop destination is obvious. */
+.editor-stack-group.editor-drag-over {
+  border-color: var(--accent);
+  background: rgba(184, 132, 255, 0.06);
+}
+
+/* A group's name field shares its row with the delete action, pinned right. */
+.editor-stack-group-head {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--gap-sm);
+}
+
+.editor-stack-group-head .field {
+  flex: 1;
+  min-width: 0;
+}
+
+.editor-stack-group-head .field-input {
+  width: 100%;
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+/* The fixed label of the ungrouped bucket (which has no rename/delete controls). */
+.editor-stack-group-label {
+  font-size: 0.95rem;
+  color: var(--muted);
+}
+
+/* Shown in an empty group so it still reads as a drop target. */
+.editor-stack-group-empty {
+  padding: var(--gap-md);
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.9rem;
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius);
+}
+
+/* The grab handle on each stack tile — the only draggable part, so the tile's
+   inputs stay editable. */
+.editor-drag-handle {
+  cursor: grab;
+  user-select: none;
+  align-self: center;
+  padding: 0 0.25rem;
+  color: var(--muted);
+  font-size: 1.1rem;
+}
+
+.editor-drag-handle:active {
+  cursor: grabbing;
+}
+
 /* ── card design ──────────────────────────────────────────────────────────── */
 
 /* The design tab splits in two: the box controls on the left, a live card preview
