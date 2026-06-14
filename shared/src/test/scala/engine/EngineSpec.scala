@@ -547,10 +547,46 @@ class EngineSpec extends AnyWordSpec with Matchers:
       val played = Engine.drop(state, CardId("hand#0"), StackId("gate2")).toOption.get
       stackOf(played, StackId("sink")).cards shouldBe empty
 
+  "A button ruleset" should:
+
+    // Drive a button cascade to its settled table, auto-resuming any manual pause —
+    // the headless reading the animated shell would otherwise step through.
+    def runAll(progress: Progress): GameState = progress match
+      case Progress.Done(s)              => s
+      case Progress.Ran(s, _, rest)      => runAll(Engine.step(s, rest, 0L).toOption.get)
+      case Progress.Await(s, _, _, rest) => runAll(Engine.step(s, rest, 0L).toOption.get)
+
+    "run a list of effects in order, resolving roles against the current player" in:
+      val state   = Engine.setup(ownerCatalog, Rulebook(Nil), ownerSetup)
+      val effects = List(Effect.Deal(StackRef("debt"), StackRef.Owned("deck"), 2), Effect.Shuffle(StackRef.Owned("deck")))
+      val done    = runAll(Engine.buttonCascade(state, effects).toOption.get)
+      stackOf(done, StackId("deck1")).cards.size shouldBe 2
+      stackOf(done, StackId("deck1")).shuffled shouldBe true
+      stackOf(done, StackId("deck2")).cards shouldBe empty
+
+    "retarget the same button to the next player after the turn passes" in:
+      val state = Engine.endTurn(Engine.setup(ownerCatalog, Rulebook(Nil), ownerSetup), 2)
+      val done  = runAll(Engine.buttonCascade(state, List(Effect.Deal(StackRef("debt"), StackRef.Owned("deck"), 2))).toOption.get)
+      stackOf(done, StackId("deck2")).cards.size shouldBe 2
+      stackOf(done, StackId("deck1")).cards shouldBe empty
+
+    "deal leniently, taking only what the source holds when asked for more" in:
+      val state = Engine.setup(ownerCatalog, Rulebook(Nil), ownerSetup)
+      val done  = runAll(Engine.buttonCascade(state, List(Effect.Deal(StackRef("debt"), StackRef.Owned("deck"), 999))).toOption.get)
+      stackOf(done, StackId("deck1")).cards.size shouldBe 10
+
   "JSON codecs" should:
 
     "round-trip a catalog unchanged" in:
       read[CardCatalog](write(catalog)) shouldBe catalog
+
+    "round-trip a button's effects unchanged" in:
+      val b = StackButton(StackId("hand"), "draw", List(Effect.Deal(StackRef.Owned("deck"), StackRef.Owned("hand"), 4), Effect.Shuffle(StackRef.Owned("deck"))))
+      read[StackButton](write(b)) shouldBe b
+
+    "read a legacy button action as a one-effect list" in:
+      val legacy = """{"stackId":"hand1","label":"draw 4","action":{"$type":"DealFrom","stack":"deck1","count":4}}"""
+      read[StackButton](legacy) shouldBe StackButton(StackId("hand1"), "draw 4", List(Effect.Deal(StackRef("deck1"), StackRef("hand1"), 4)))
 
     "round-trip a player-relative rulebook unchanged" in:
       read[Rulebook](write(ownerRulebook)) shouldBe ownerRulebook

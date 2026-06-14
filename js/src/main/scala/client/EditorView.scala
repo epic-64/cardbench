@@ -140,88 +140,93 @@ object EditorView:
     def setTriggerTo(i: Int, to: StackRef): Unit =
       updateRule(i)(r => r.trigger match { case Trigger.Moved(c, _) => r.copy(trigger = Trigger.Moved(c, to)) })
 
-    def effectRow(i: Int, j: Int): Element =
-      def updateDeal(g: Effect.Deal => Effect.Deal): Unit =
-        updateRule(i): r =>
-          r.copy(effects = r.effects.lift(j).fold(r.effects) {
-            case d: Effect.Deal => r.effects.updated(j, g(d))
-            case _              => r.effects
-          })
-      def updateShuffle(g: Effect.Shuffle => Effect.Shuffle): Unit =
-        updateRule(i): r =>
-          r.copy(effects = r.effects.lift(j).fold(r.effects) {
-            case s: Effect.Shuffle => r.effects.updated(j, g(s))
-            case _                 => r.effects
-          })
-      def updateManual(g: Effect.Manual => Effect.Manual): Unit =
-        updateRule(i): r =>
-          r.copy(effects = r.effects.lift(j).fold(r.effects) {
-            case m: Effect.Manual => r.effects.updated(j, g(m))
-            case _                => r.effects
-          })
-      def setEffectKind(kind: String): Unit =
-        updateRule(i)(r => r.copy(effects = r.effects.lift(j).fold(r.effects)(e => r.effects.updated(j, withEffectKind(e, kind)))))
-      def removeEffect(): Unit =
-        updateRule(i)(r => r.copy(effects = r.effects.patch(j, Nil, 1)))
-      // Swap this effect with its neighbour `delta` away, then nudge `reorderTick`
-      // so the rows rebuild even when the two share a kind.
-      def moveEffect(delta: Int): Unit =
-        updateRule(i): r =>
-          val k = j + delta
-          r.effects.lift(k).fold(r)(_ => r.copy(effects = r.effects.updated(j, r.effects(k)).updated(k, r.effects(j))))
-        reorderTick.update(_ + 1)
-      def dealRef(pick: Effect.Deal => StackRef): Signal[StackRef] =
-        draft.signal.map(_.rulebook.rules.lift(i).flatMap(_.effects.lift(j)) match { case Some(d: Effect.Deal) => pick(d); case _ => StackRef("") }).distinct
-      def shuffleRef: Signal[StackRef] =
-        draft.signal.map(_.rulebook.rules.lift(i).flatMap(_.effects.lift(j)) match { case Some(s: Effect.Shuffle) => s.stack; case _ => StackRef("") }).distinct
-      val effect    = draft.now().rulebook.rules(i).effects(j)
-      val count     = draft.now().rulebook.rules(i).effects.size
-      // One type select per effect; picking another kind rewrites this slot. The
-      // type-specific fields follow. (The row rebuilds on a kind change — see
-      // `effectKinds` in `ruleRow` — so the right fields always show.)
-      val kindField = selectField("Effect", effectKindOptions, effectKind(effect), setEffectKind)
-      // Reorder/remove controls, grouped and pinned to the right of each effect.
-      val actions = div(
-        cls := "editor-effect-actions",
-        if j > 0 then moveButton("↑", "Move up", () => moveEffect(-1)) else emptyNode,
-        if j < count - 1 then moveButton("↓", "Move down", () => moveEffect(1)) else emptyNode,
-        removeButton(() => removeEffect()),
+    // The shared effects editor — the "Then …" list of effects, identical for a
+    // rule and a button. `effectsSig` reads the list reactively (drives row rebuilds
+    // and the uncontrolled fields' starting values via `read`); `update` writes a
+    // transformed list back. Both a rule's `effects` and a button's `effects` plug in.
+    def effectsBlock(
+      effectsSig: Signal[List[Effect]],
+      read: () => List[Effect],
+      update: (List[Effect] => List[Effect]) => Unit,
+    ): Element =
+      def effectRow(j: Int): Element =
+        def updateDeal(g: Effect.Deal => Effect.Deal): Unit =
+          update(es => es.lift(j).fold(es) { case d: Effect.Deal => es.updated(j, g(d)); case _ => es })
+        def updateShuffle(g: Effect.Shuffle => Effect.Shuffle): Unit =
+          update(es => es.lift(j).fold(es) { case s: Effect.Shuffle => es.updated(j, g(s)); case _ => es })
+        def updateManual(g: Effect.Manual => Effect.Manual): Unit =
+          update(es => es.lift(j).fold(es) { case m: Effect.Manual => es.updated(j, g(m)); case _ => es })
+        def setEffectKind(kind: String): Unit =
+          update(es => es.lift(j).fold(es)(e => es.updated(j, withEffectKind(e, kind))))
+        def removeEffect(): Unit =
+          update(es => es.patch(j, Nil, 1))
+        // Swap this effect with its neighbour `delta` away, then nudge `reorderTick`
+        // so the rows rebuild even when the two share a kind.
+        def moveEffect(delta: Int): Unit =
+          update: es =>
+            val k = j + delta
+            es.lift(k).fold(es)(_ => es.updated(j, es(k)).updated(k, es(j)))
+          reorderTick.update(_ + 1)
+        def dealRef(pick: Effect.Deal => StackRef): Signal[StackRef] =
+          effectsSig.map(_.lift(j) match { case Some(d: Effect.Deal) => pick(d); case _ => StackRef("") }).distinct
+        def shuffleRef: Signal[StackRef] =
+          effectsSig.map(_.lift(j) match { case Some(s: Effect.Shuffle) => s.stack; case _ => StackRef("") }).distinct
+        val effect    = read().lift(j).getOrElse(Effect.Manual(""))
+        val count     = read().size
+        // One type select per effect; picking another kind rewrites this slot. The
+        // type-specific fields follow. (The row rebuilds on a kind change — see
+        // `effectKinds` below — so the right fields always show.)
+        val kindField = selectField("Effect", effectKindOptions, effectKind(effect), setEffectKind)
+        // Reorder/remove controls, grouped and pinned to the right of each effect.
+        val actions = div(
+          cls := "editor-effect-actions",
+          if j > 0 then moveButton("↑", "Move up", () => moveEffect(-1)) else emptyNode,
+          if j < count - 1 then moveButton("↓", "Move down", () => moveEffect(1)) else emptyNode,
+          removeButton(() => removeEffect()),
+        )
+        effect match
+          case Effect.Deal(_, _, dealCount) =>
+            div(
+              cls := "editor-effect",
+              kindField,
+              stackRefField("from", dealRef(_.from), ref => updateDeal(_.copy(from = ref))),
+              stackRefField("to", dealRef(_.to), ref => updateDeal(_.copy(to = ref))),
+              numberField("Count", dealCount, n => updateDeal(_.copy(count = n))),
+              actions,
+            )
+          case _: Effect.Shuffle =>
+            div(
+              cls := "editor-effect",
+              kindField,
+              stackRefField("Stack", shuffleRef, ref => updateShuffle(_.copy(stack = ref))),
+              actions,
+            )
+          case Effect.Manual(description) =>
+            div(
+              cls := "editor-effect",
+              kindField,
+              textAreaField("Description", description, v => updateManual(_.copy(description = v))),
+              actions,
+            )
+      // Rebuild the effect rows when one is added, removed, *or* retyped: the signal
+      // keys off the list of effect kinds, not just its length, so switching a Deal
+      // to a Shuffle re-renders that row with the new effect's fields.
+      val effectKinds: Signal[List[String]] = effectsSig.map(_.map(effectKind)).distinct
+      div(
+        cls := "editor-rule-body",
+        div(
+          cls := "editor-rule-effects-head",
+          span(cls := "rule-badge rule-badge-then", "Then"),
+          addButton("+ Add effect", () => update(_ :+ Effect.Deal(StackRef(""), StackRef("")))),
+        ),
+        div(cls := "editor-effects", children <-- effectKinds.combineWith(reorderTick.signal).map((kinds, _) => kinds.indices.toList.map(effectRow))),
       )
-      effect match
-        case Effect.Deal(_, _, dealCount) =>
-          div(
-            cls := "editor-effect",
-            kindField,
-            stackRefField("from", dealRef(_.from), ref => updateDeal(_.copy(from = ref))),
-            stackRefField("to", dealRef(_.to), ref => updateDeal(_.copy(to = ref))),
-            numberField("Count", dealCount, n => updateDeal(_.copy(count = n))),
-            actions,
-          )
-        case _: Effect.Shuffle =>
-          div(
-            cls := "editor-effect",
-            kindField,
-            stackRefField("Stack", shuffleRef, ref => updateShuffle(_.copy(stack = ref))),
-            actions,
-          )
-        case Effect.Manual(description) =>
-          div(
-            cls := "editor-effect",
-            kindField,
-            textAreaField("Description", description, v => updateManual(_.copy(description = v))),
-            actions,
-          )
 
     def ruleRow(i: Int): Element =
       def triggerCard: Signal[String] =
         draft.signal.map(_.rulebook.rules.lift(i).map(_.trigger) match { case Some(Trigger.Moved(c, _)) => c.value; case _ => "" }).distinct
       def triggerToRef: Signal[StackRef] =
         draft.signal.map(_.rulebook.rules.lift(i).map(_.trigger) match { case Some(Trigger.Moved(_, to)) => to; case _ => StackRef("") }).distinct
-      // Rebuild the effect rows when one is added, removed, *or* retyped: the signal
-      // keys off the list of effect kinds, not just its length, so switching a Deal
-      // to a Shuffle re-renders that row with the new effect's fields.
-      val effectKinds: Signal[List[String]] =
-        draft.signal.map(_.rulebook.rules.lift(i).fold(List.empty[String])(_.effects.map(effectKind))).distinct
       div(
         cls := "editor-rule",
         div(
@@ -231,14 +236,10 @@ object EditorView:
           stackRefField("lands on stack", triggerToRef, ref => setTriggerTo(i, ref)),
           removeButton(() => setRules(rs => rs.patch(i, Nil, 1))),
         ),
-        div(
-          cls := "editor-rule-body",
-          div(
-            cls := "editor-rule-effects-head",
-            span(cls := "rule-badge rule-badge-then", "Then"),
-            addButton("+ Add effect", () => updateRule(i)(r => r.copy(effects = r.effects :+ Effect.Deal(StackRef(""), StackRef(""))))),
-          ),
-          div(cls := "editor-effects", children <-- effectKinds.combineWith(reorderTick.signal).map((kinds, _) => kinds.indices.toList.map(j => effectRow(i, j)))),
+        effectsBlock(
+          draft.signal.map(_.rulebook.rules.lift(i).fold(List.empty[Effect])(_.effects)).distinct,
+          () => draft.now().rulebook.rules.lift(i).fold(List.empty[Effect])(_.effects),
+          f => updateRule(i)(r => r.copy(effects = f(r.effects))),
         ),
       )
 
@@ -490,26 +491,33 @@ object EditorView:
     def updateButton(i: Int)(f: StackButton => StackButton): Unit =
       setButtons(bs => bs.lift(i).fold(bs)(b => bs.updated(i, f(b))))
 
+    // A button is a click-triggered ruleset: the stack it sits on, its label, and the
+    // same effects editor a rule uses — so a button can run a whole list of effects,
+    // each targeting a fixed stack or the current player's role.
     def buttonRow(i: Int): Element =
       val b = draft.now().setup.buttons(i)
       def onStack: Signal[String] =
         draft.signal.map(_.setup.buttons.lift(i).fold("")(_.stackId.value)).distinct
-      def actionStackSig: Signal[String] =
-        draft.signal.map(_.setup.buttons.lift(i).map(_.action).fold("")(actionStack(_).value)).distinct
       div(
-        cls := "editor-row",
-        idSelectField("On stack", stackIds, onStack, v => updateButton(i)(_.copy(stackId = StackId(v)))),
-        textField("Label", b.label, v => updateButton(i)(_.copy(label = v))),
-        selectField("Action", buttonActionOptions, actionKind(b.action), k => updateButton(i)(bn => bn.copy(action = withKind(bn.action, k)))),
-        idSelectField("Other stack", stackIds, actionStackSig, v => updateButton(i)(bn => bn.copy(action = withStack(bn.action, StackId(v))))),
-        numberField("Count", actionCount(b.action), n => updateButton(i)(bn => bn.copy(action = withCount(bn.action, n)))),
-        removeButton(() => setButtons(bs => bs.patch(i, Nil, 1))),
+        cls := "editor-rule",
+        div(
+          cls := "editor-rule-head",
+          span(cls := "rule-badge", "Button"),
+          idSelectField("on stack", stackIds, onStack, v => updateButton(i)(_.copy(stackId = StackId(v)))),
+          textField("Label", b.label, v => updateButton(i)(_.copy(label = v))),
+          removeButton(() => setButtons(bs => bs.patch(i, Nil, 1))),
+        ),
+        effectsBlock(
+          draft.signal.map(_.setup.buttons.lift(i).fold(List.empty[Effect])(_.effects)).distinct,
+          () => draft.now().setup.buttons.lift(i).fold(List.empty[Effect])(_.effects),
+          f => updateButton(i)(bn => bn.copy(effects = f(bn.effects))),
+        ),
       )
 
     val buttonsSection = section(
       "Buttons",
       "+ Add button",
-      () => setButtons(_ :+ StackButton(StackId(""), "Button", ButtonAction.DealFrom(StackId("")))),
+      () => setButtons(_ :+ StackButton(StackId(""), "Button", Nil)),
       draft.signal.map(_.setup.buttons.size),
       buttonRow,
     )
@@ -728,27 +736,3 @@ object EditorView:
     case (_: Effect.Manual, "deal")     => Effect.Deal(StackRef(""), StackRef(""))
     case (_: Effect.Manual, "shuffle")  => Effect.Shuffle(StackRef(""))
     case (other, _)                     => other
-
-  // A button's action is a tagged choice ("from"/"to") carrying a stack and a
-  // count; these read and rebuild it field-by-field so a tab switch never loses
-  // the other half of the value.
-  private val buttonActionOptions = List("Deal from" -> "from", "Deal to" -> "to")
-
-  private def actionKind(a: ButtonAction): String = a match
-    case _: ButtonAction.DealFrom => "from"
-    case _: ButtonAction.DealTo   => "to"
-  private def actionStack(a: ButtonAction): StackId = a match
-    case ButtonAction.DealFrom(s, _) => s
-    case ButtonAction.DealTo(s, _)   => s
-  private def actionCount(a: ButtonAction): Int = a match
-    case ButtonAction.DealFrom(_, c) => c
-    case ButtonAction.DealTo(_, c)   => c
-  private def withKind(a: ButtonAction, kind: String): ButtonAction = kind match
-    case "from" => ButtonAction.DealFrom(actionStack(a), actionCount(a))
-    case _      => ButtonAction.DealTo(actionStack(a), actionCount(a))
-  private def withStack(a: ButtonAction, s: StackId): ButtonAction = a match
-    case d: ButtonAction.DealFrom => d.copy(stack = s)
-    case d: ButtonAction.DealTo   => d.copy(stack = s)
-  private def withCount(a: ButtonAction, c: Int): ButtonAction = a match
-    case d: ButtonAction.DealFrom => d.copy(count = c)
-    case d: ButtonAction.DealTo   => d.copy(count = c)

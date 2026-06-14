@@ -281,24 +281,22 @@ object GameView:
     def stackButtons(stack: Stack): Node =
       definition.setup.buttons.filter(_.stackId == stack.id) match
         case Nil     => emptyNode
-        case buttons => div(cls := "stack-buttons", buttons.map(buttonControl(stack, _)))
+        case buttons => div(cls := "stack-buttons", buttons.map(buttonControl))
 
-    def buttonControl(stack: Stack, b: StackButton): Element =
+    def buttonControl(b: StackButton): Element =
       button(
         cls := "stack-button",
         b.label,
-        onClick --> (_ => runButton(stack, b)),
+        onClick --> (_ => runButton(b)),
       )
 
-    // A button deals between its own stack and the action's other stack: DealFrom
-    // draws into this stack, DealTo deals out of it. Ignored while a script runs;
-    // a deal from an empty source simply resolves to nothing.
-    def runButton(stack: Stack, b: StackButton): Unit =
+    // A button runs its authored effects as a cascade — the same effect system the
+    // rules use, resolved against the current player — pausing on any Manual just
+    // like a drop. Ignored while a script runs or a manual prompt is open; effects
+    // run leniently, so a deal from an empty source simply resolves to nothing.
+    def runButton(b: StackButton): Unit =
       if !animating && manualPause.now().isEmpty then
-        val (from, to, count) = b.action match
-          case ButtonAction.DealFrom(src, c) => (src, stack.id, c)
-          case ButtonAction.DealTo(dst, c)   => (stack.id, dst, c)
-        startCascade(Engine.dealCascade(state.now(), from, to, count, _), None)
+        startCascade(Engine.buttonCascade(state.now(), b.effects, _), None)
 
     // ── animated drops ─────────────────────────────────────────────────────
     // A drop resolves as a script of atomic steps (Engine.dropSteps); we run it
@@ -617,9 +615,13 @@ object GameView:
       val anchor = state.signal.map(_.stacks.find(_.cards.exists(_.id == prompt.card)).map(_.position)).distinct
       div(
         cls := "manual-dialog",
-        styleAttr <-- anchor.map {
-          case Some(p) => s"left:${p.x + cardWidth + 8}px;top:${p.y}px"
-          case None    => "display:none" // the card has left the table — nothing to anchor to
+        // Anchor beside the triggering card while it's on the table. A prompt with no
+        // such card — a button's own Manual, or a card that has since left — pins to a
+        // fixed spot in the viewport instead (board coords undoing the current pan and
+        // zoom), so it stays visible and dismissible rather than vanishing.
+        styleAttr <-- anchor.combineWith(pan.signal).combineWith(zoom.signal).map {
+          case (Some(p), _, _) => s"left:${p.x + cardWidth + 8}px;top:${p.y}px"
+          case (None, pn, z)   => s"left:${((24 - pn.x) / z).toInt}px;top:${((96 - pn.y) / z).toInt}px"
         },
         div(cls := "manual-desc", prompt.description),
         button(cls := "btn btn-primary", "Done", onClick --> (_ => completeManual(prompt))),
