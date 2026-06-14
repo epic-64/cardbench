@@ -32,10 +32,11 @@ object GameView:
   // continuation as plain data — the queue (its head's choice still unfilled) plus
   // the play's seed, so resuming is `Engine.applyChoice` then another `Engine.step`.
   private final case class ChoicePrompt(card: CardId, slot: String, rest: List[engine.Pending], seed: Long)
-  // A cascade halted on a `MoveChosen`: the card the prompt anchors to, and the
-  // continuation as plain data — the queue (its head's card still unpicked) plus the
-  // seed, so resuming is `Engine.applyCardChoice` then another `Engine.step`.
-  private final case class CardChoicePrompt(card: CardId, rest: List[engine.Pending], seed: Long)
+  // A cascade halted on a `MoveChosen`: the card the prompt anchors to, the `filter`
+  // restricting which cards may be picked (empty = any), and the continuation as plain
+  // data — the queue (its head's card still unpicked) plus the seed, so resuming is
+  // `Engine.applyCardChoice` then another `Engine.step`.
+  private final case class CardChoicePrompt(card: CardId, filter: CardFilter, rest: List[engine.Pending], seed: Long)
 
   def view(definition: GameDefinition, onBack: () => Unit): Element =
     // A fresh table from the authored data; the saved live table (if a game is in
@@ -485,9 +486,12 @@ object GameView:
           animating = false
           choicePause.set(Some(ChoicePrompt(card, slot, rest, seed)))
         case Progress.ChooseCard(_, card, rest) =>
-          // Release the board and raise the picker; a card click resolves it.
+          // Release the board and raise the picker; a card click resolves it. The head
+          // of the queue is the unfilled `MoveChosen`, so its filter rides along to gate
+          // which cards the player may click (see the card click handler).
           animating = false
-          cardChoicePause.set(Some(CardChoicePrompt(card, rest, seed)))
+          val filter = rest.headOption.collect { case engine.Pending(_, Effect.MoveChosen(_, _, f), _) => f }.getOrElse(CardFilter())
+          cardChoicePause.set(Some(CardChoicePrompt(card, filter, rest, seed)))
 
     // Surface a cascade failure: stop the script, log it to the console, and raise the
     // dismissible banner — so a misconfigured button or rule reports plainly instead of
@@ -704,7 +708,9 @@ object GameView:
         cardChoicePause.now() match
           case Some(prompt) =>
             e.stopPropagation()
-            resolveCardChoice(prompt, card.id)
+            // Only a card the prompt's filter admits resolves the pick; a click on any
+            // other card is swallowed, so a filtered MoveChosen can't move the wrong kind.
+            if prompt.filter.matches(card.defId) then resolveCardChoice(prompt, card.id)
           case None =>
             if !animating && !pickPending then state.update(s => Engine.flip(s, card.id).getOrElse(s))
       }

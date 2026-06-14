@@ -159,10 +159,13 @@ object EditorView:
     // rule and a button. `effectsSig` reads the list reactively (drives row rebuilds
     // and the uncontrolled fields' starting values via `read`); `update` writes a
     // transformed list back. Both a rule's `effects` and a button's `effects` plug in.
+    // `badge` labels the block's header ("Then" for a rule/button, or "Then"/"Else" for
+    // an `If`'s two nested branches); it recurses into itself to render those branches.
     def effectsBlock(
       effectsSig: Signal[List[Effect]],
       read: () => List[Effect],
       update: (List[Effect] => List[Effect]) => Unit,
+      badge: String = "Then",
     ): Element =
       def effectRow(j: Int): Element =
         def updateDeal(g: Effect.Deal => Effect.Deal): Unit =
@@ -173,6 +176,24 @@ object EditorView:
           update(es => es.lift(j).fold(es) { case m: Effect.MoveChosen => es.updated(j, g(m)); case _ => es })
         def updateManual(g: Effect.Manual => Effect.Manual): Unit =
           update(es => es.lift(j).fold(es) { case m: Effect.Manual => es.updated(j, g(m)); case _ => es })
+        def updateIf(g: Effect.If => Effect.If): Unit =
+          update(es => es.lift(j).fold(es) { case f: Effect.If => es.updated(j, g(f)); case _ => es })
+        // The `If`'s condition is always a `CountAtLeast`; edit one of its fields, keep
+        // the rest. A `where` that is a player-choice is meaningless for a condition the
+        // engine reads headlessly, so the field below forbids it (`allowChoice = false`).
+        def updateCount(g: Condition.CountAtLeast => Condition.CountAtLeast): Unit =
+          updateIf(f => f.cond match { case c: Condition.CountAtLeast => f.copy(cond = g(c)) })
+        def ifWhereRef: Signal[StackRef] =
+          effectsSig.map(_.lift(j) match { case Some(Effect.If(Condition.CountAtLeast(w, _, _), _, _)) => w; case _ => StackRef("") }).distinct
+        // A nested branch's effects, read and written through this row's `If`, rendered by
+        // a recursive `effectsBlock`. `get`/`set` pick out and replace the branch's list.
+        def branchBlock(get: Effect.If => List[Effect], set: (Effect.If, List[Effect]) => Effect.If, label: String): Element =
+          effectsBlock(
+            effectsSig.map(_.lift(j) match { case Some(f: Effect.If) => get(f); case _ => Nil }),
+            () => read().lift(j) match { case Some(f: Effect.If) => get(f); case _ => Nil },
+            g => updateIf(f => set(f, g(get(f)))),
+            label,
+          )
         def setEffectKind(kind: String): Unit =
           update(es => es.lift(j).fold(es)(e => es.updated(j, withEffectKind(e, kind))))
         def removeEffect(): Unit =
@@ -204,22 +225,26 @@ object EditorView:
           removeButton(() => removeEffect()),
         )
         effect match
-          case Effect.Deal(_, _, dealCount) =>
+          case Effect.Deal(_, _, dealCount, dealFilter) =>
             div(
               cls := "editor-effect",
               kindField,
               stackRefField("from", dealRef(_.from), ref => updateDeal(_.copy(from = ref))),
               stackRefField("to", dealRef(_.to), ref => updateDeal(_.copy(to = ref))),
               numberField("Count", dealCount, n => updateDeal(_.copy(count = n))),
+              // Blank = deal the literal top; ids = deal the top-most matching card(s).
+              filterField("Only cards", dealFilter, f => updateDeal(_.copy(filter = f))),
               actions,
             )
-          case _: Effect.MoveChosen =>
+          case m: Effect.MoveChosen =>
             div(
               cls := "editor-effect",
               kindField,
               // The card is picked by the player at play time (top of a pile, or a
               // specific card in a row); only its destination is authored here.
               stackRefField("to", moveChosenRef, ref => updateMoveChosen(_.copy(to = ref))),
+              // Blank = any card; ids restrict which cards the player may pick.
+              filterField("Only cards", m.filter, f => updateMoveChosen(_.copy(filter = f))),
               actions,
             )
           case _: Effect.Shuffle =>
@@ -236,6 +261,20 @@ object EditorView:
               textAreaField("Description", description, v => updateManual(_.copy(description = v))),
               actions,
             )
+          case Effect.If(Condition.CountAtLeast(_, condFilter, condN), _, _) =>
+            div(
+              cls := "editor-effect editor-effect-if",
+              div(
+                cls := "editor-if-cond",
+                kindField,
+                numberField("At least", condN, n => updateCount(_.copy(n = n))),
+                filterField("of cards", condFilter, f => updateCount(_.copy(filter = f))),
+                stackRefField("in", ifWhereRef, ref => updateCount(_.copy(where = ref)), allowChoice = false),
+                actions,
+              ),
+              branchBlock(_.thenDo, (f, es) => f.copy(thenDo = es), "Then"),
+              branchBlock(_.elseDo, (f, es) => f.copy(elseDo = es), "Else"),
+            )
           case Effect.EndTurn =>
             div(cls := "editor-effect", kindField, actions)
       // Rebuild the effect rows when one is added, removed, *or* retyped: the signal
@@ -246,7 +285,7 @@ object EditorView:
         cls := "editor-rule-body",
         div(
           cls := "editor-rule-effects-head",
-          span(cls := "rule-badge rule-badge-then", "Then"),
+          span(cls := "rule-badge rule-badge-then", badge),
           addButton("+ Add effect", () => update(_ :+ Effect.Deal(StackRef(""), StackRef("")))),
         ),
         div(cls := "editor-effects", children <-- effectKinds.combineWith(reorderTick.signal).map((kinds, _) => kinds.indices.toList.map(effectRow))),
@@ -803,7 +842,11 @@ object EditorView:
   // Deal, and a per-row type select swaps between the kinds, carrying a stack id
   // across so retyping doesn't blank the row.
   private val effectKindOptions =
-    List("Deal" -> "deal", "Move chosen card" -> "movechosen", "Shuffle" -> "shuffle", "Manual" -> "manual", "End turn" -> "endturn")
+    List("Deal" -> "deal", "Move chosen card" -> "movechosen", "Shuffle" -> "shuffle", "If" -> "if", "Manual" -> "manual", "End turn" -> "endturn")
+
+  // The default a fresh `If` starts from: a count-at-least-one condition over an
+  // unnamed stack with no filter and both branches empty, for the author to fill in.
+  private def freshIf: Effect.If = Effect.If(Condition.CountAtLeast(StackRef(""), CardFilter(), 1))
 
   // A stack reference is a tagged choice between a fixed stack, the current player's
   // stack of a role, and a target the player picks at play time. The labels spell
@@ -848,11 +891,22 @@ object EditorView:
     case ButtonHost.OnRole(role) => role
     case _                       => ""
 
+  // A card-definition allow-list edited as a comma-separated list of ids (blank = any
+  // card). Uncontrolled like every editor field: it takes the filter's current ids as
+  // its starting text and parses each change back into a `CardFilter`, trimming blanks.
+  private def filterField(name: String, filter: CardFilter, onChanged: CardFilter => Unit): Element =
+    textField(
+      name,
+      filter.anyOf.map(_.value).mkString(", "),
+      v => onChanged(CardFilter(v.split(",").map(_.trim).filter(_.nonEmpty).map(CardDefId(_)).toList)),
+    )
+
   private def effectKind(e: Effect): String = e match
     case _: Effect.Deal       => "deal"
     case _: Effect.MoveChosen => "movechosen"
     case _: Effect.Shuffle    => "shuffle"
     case _: Effect.Manual     => "manual"
+    case _: Effect.If         => "if"
     case Effect.EndTurn       => "endturn"
 
   // Switching an effect's kind carries its primary stack reference across where it
@@ -860,6 +914,12 @@ object EditorView:
   // retyping a row doesn't blank a target the author already set.
   private def withEffectKind(e: Effect, kind: String): Effect = (e, kind) match
     case (_, "endturn")                    => Effect.EndTurn
+    // An `If` carries no single stack reference to hand on, so it starts fresh either way.
+    case (_, "if")                         => freshIf
+    case (_: Effect.If, "deal")            => Effect.Deal(StackRef(""), StackRef(""))
+    case (_: Effect.If, "shuffle")         => Effect.Shuffle(StackRef(""))
+    case (_: Effect.If, "movechosen")      => Effect.MoveChosen(StackRef(""))
+    case (_: Effect.If, "manual")          => Effect.Manual("")
     case (Effect.EndTurn, "deal")          => Effect.Deal(StackRef(""), StackRef(""))
     case (Effect.EndTurn, "shuffle")       => Effect.Shuffle(StackRef(""))
     case (Effect.EndTurn, "manual")        => Effect.Manual("")
