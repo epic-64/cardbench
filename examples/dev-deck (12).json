@@ -1,0 +1,663 @@
+{
+  "id": "game-1781522816322",
+  "name": "Dev Deck",
+  "catalog": {
+    "cards": [
+      {
+        "id": "build",
+        "color": "#3b82f6",
+        "title": "Build",
+        "description": "Move 2 cards from the Tech Debt stack into your Deck.\nMove 1 card from the Feature deck into your Build.",
+        "corners": {
+          "topRight": "1"
+        }
+      },
+      {
+        "id": "refactor",
+        "color": "#22c55e",
+        "title": "Refactor",
+        "description": "Remove 2 debt cards from your deck or discard pile. (back to the Tech Debt stack)",
+        "corners": {
+          "topRight": "1"
+        }
+      },
+      {
+        "id": "test",
+        "color": "#eab308",
+        "title": "Test",
+        "description": "Add this Test to your build to protect against bugs. (Card can be sacrificed instead of a Feature)"
+      },
+      {
+        "id": "backup",
+        "color": "#a855f7",
+        "title": "Backup",
+        "description": "Add this backup to your build to protect against data loss. (Card can be sacrificed instead of Features)"
+      },
+      {
+        "id": "debt",
+        "color": "#6b7280",
+        "title": "Tech Debt",
+        "description": "Dead weight. Clogs your hand."
+      },
+      {
+        "id": "crunch",
+        "color": "#f97316",
+        "title": "Crunch",
+        "description": "EXTRA ACTION.\nAdd a Tech Debt to your deck, then play an additional card this turn."
+      },
+      {
+        "id": "modular-design",
+        "color": "#14b8a6",
+        "title": "Modular Design",
+        "description": "Discard 3 Features.\nChoose 1 card from the Feature deck and add it to your build. Shuffle the Feature deck."
+      },
+      {
+        "id": "feature-green",
+        "color": "#16a34a",
+        "title": "Feature (Green)",
+        "description": "A green feature."
+      },
+      {
+        "id": "feature-blue",
+        "color": "#2563eb",
+        "title": "Feature (Blue)",
+        "description": "A blue feature."
+      },
+      {
+        "id": "feature-red",
+        "color": "#ef4444",
+        "title": "Feature (Red)",
+        "description": "A red feature."
+      },
+      {
+        "id": "bug",
+        "color": "#dc2626",
+        "title": "Bug",
+        "description": "Delete one feature or test from your build."
+      },
+      {
+        "id": "data-loss",
+        "color": "#7f1d1d",
+        "title": "Data Loss",
+        "description": "For every tech debt in your hand, delete one feature from your build."
+      },
+      {
+        "id": "stakeholder-pivot",
+        "color": "#db2777",
+        "title": "Stakeholder Pivot",
+        "description": "Discard the leftmost feature of the customer project, and replace it with the top card of the feature deck."
+      },
+      {
+        "id": "burnout",
+        "color": "#ea580c",
+        "title": "Burnout",
+        "description": "If you have two or more tech debt cards, discard one non-debt card from your hand."
+      },
+      {
+        "id": "ci-cd",
+        "color": "#0891b2",
+        "title": "CI/CD",
+        "description": "If you have a test in your build:\ndraw a card.\ngain one extra action this turn."
+      },
+      {
+        "id": "rule-taking-a-turn",
+        "color": "#888888",
+        "title": "Taking a Turn",
+        "description": "1. Draw 4 cards from your deck.\n2. Reveal an event and execute it.\n3. Play one card from your hand.\n4. Discard your hand."
+      },
+      {
+        "id": "rule-preparation",
+        "color": "#888888",
+        "title": "Preparation",
+        "description": "1. Deal 3 Feature cards into the global Project Zone, face up."
+      },
+      {
+        "id": "rule-winning",
+        "color": "#888888",
+        "title": "Winning the Game",
+        "description": "The first to collect 8 Feature cards wins. When you have 3 Feature cards in your Build Zone, that match the colors of the Project, you can deliver the project. Move the 3 Feature cards into your Points Zone"
+      },
+      {
+        "id": "current-player",
+        "color": "#888888",
+        "title": "Current Player",
+        "description": "%current_player_index%"
+      }
+    ]
+  },
+  "rulebook": {
+    "rules": [
+      {
+        "trigger": {
+          "$type": "Moved",
+          "card": "build",
+          "to": "play"
+        },
+        "effects": [
+          {
+            "$type": "Deal",
+            "from": "features",
+            "to": {
+              "role": "build"
+            }
+          },
+          {
+            "$type": "Deal",
+            "from": "debt",
+            "to": {
+              "role": "deck"
+            },
+            "count": 2
+          },
+          {
+            "$type": "Shuffle",
+            "stack": {
+              "role": "deck"
+            }
+          },
+          {
+            "$type": "Deal",
+            "from": "play",
+            "to": {
+              "role": "deck-discard"
+            }
+          }
+        ]
+      },
+      {
+        "trigger": {
+          "$type": "Moved",
+          "card": "debt",
+          "to": "play"
+        },
+        "effects": [
+          {
+            "$type": "Manual",
+            "description": "do something."
+          },
+          {
+            "$type": "Deal",
+            "from": {
+              "choice": true
+            },
+            "to": {
+              "choice": true
+            }
+          },
+          {
+            "$type": "Deal",
+            "from": "play",
+            "to": "debt"
+          },
+          {
+            "$type": "MoveChosen",
+            "to": {
+              "choice": true
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "setup": {
+    "stacks": [
+      {
+        "id": "feature-discard",
+        "label": "Feature Discard",
+        "position": {
+          "x": 80,
+          "y": 0
+        },
+        "facing": "up",
+        "contents": [],
+        "group": "group-2"
+      },
+      {
+        "id": "project-zone",
+        "label": "Project Zone",
+        "position": {
+          "x": 400,
+          "y": 0
+        },
+        "facing": "up",
+        "contents": [],
+        "layout": "row",
+        "group": "group-2"
+      },
+      {
+        "id": "debt",
+        "label": "Tech Debt",
+        "position": {
+          "x": 1120,
+          "y": 0
+        },
+        "facing": "down",
+        "contents": [
+          {
+            "card": "debt",
+            "count": 30
+          }
+        ],
+        "group": "group-2"
+      },
+      {
+        "id": "features",
+        "label": "Feature Deck",
+        "position": {
+          "x": 220,
+          "y": 0
+        },
+        "facing": "down",
+        "contents": [
+          {
+            "card": "feature-green",
+            "count": 10
+          },
+          {
+            "card": "feature-blue",
+            "count": 10
+          },
+          {
+            "card": "feature-red",
+            "count": 10
+          }
+        ],
+        "arrangement": "shuffled",
+        "group": "group-2"
+      },
+      {
+        "id": "events",
+        "label": "Event Deck",
+        "position": {
+          "x": 980,
+          "y": 0
+        },
+        "facing": "down",
+        "contents": [
+          {
+            "card": "bug",
+            "count": 3
+          },
+          {
+            "card": "data-loss",
+            "count": 2
+          },
+          {
+            "card": "stakeholder-pivot",
+            "count": 2
+          },
+          {
+            "card": "burnout",
+            "count": 2
+          },
+          {
+            "card": "ci-cd",
+            "count": 2
+          }
+        ],
+        "arrangement": "shuffled",
+        "group": "group-2"
+      },
+      {
+        "id": "event-discard",
+        "label": "Event Discard",
+        "position": {
+          "x": 840,
+          "y": 0
+        },
+        "facing": "up",
+        "contents": [],
+        "group": "group-2"
+      },
+      {
+        "id": "play",
+        "label": "Play Zone",
+        "position": {
+          "x": 680,
+          "y": 260
+        },
+        "facing": "up",
+        "contents": [],
+        "group": "group-2",
+        "color": "#ffe047"
+      },
+      {
+        "id": "current-player",
+        "label": "Current Player",
+        "position": {
+          "x": 680,
+          "y": 500
+        },
+        "facing": "up",
+        "contents": [
+          {
+            "card": "current-player",
+            "count": 1
+          }
+        ],
+        "group": "group-2"
+      },
+      {
+        "id": "deck1",
+        "label": "Deck 1",
+        "position": {
+          "x": 140,
+          "y": 740
+        },
+        "facing": "down",
+        "contents": [
+          {
+            "card": "build",
+            "count": 8
+          },
+          {
+            "card": "refactor",
+            "count": 4
+          },
+          {
+            "card": "crunch",
+            "count": 2
+          },
+          {
+            "card": "modular-design",
+            "count": 2
+          },
+          {
+            "card": "test",
+            "count": 2
+          },
+          {
+            "card": "backup",
+            "count": 2
+          }
+        ],
+        "arrangement": "shuffled",
+        "group": "group-0",
+        "owner": 0,
+        "role": "deck"
+      },
+      {
+        "id": "hand1",
+        "label": "Hand 1",
+        "position": {
+          "x": 0,
+          "y": 500
+        },
+        "facing": "up",
+        "contents": [],
+        "layout": "row",
+        "width": 4,
+        "group": "group-0",
+        "owner": 0,
+        "role": "hand"
+      },
+      {
+        "id": "build1",
+        "label": "Build Zone 1",
+        "position": {
+          "x": 0,
+          "y": 260
+        },
+        "facing": "up",
+        "contents": [],
+        "layout": "row",
+        "group": "group-0",
+        "owner": 0,
+        "role": "build"
+      },
+      {
+        "id": "discard1",
+        "label": "Discard1",
+        "position": {
+          "x": 0,
+          "y": 740
+        },
+        "facing": "up",
+        "contents": [],
+        "group": "group-0",
+        "owner": 0,
+        "role": "deck-discard"
+      },
+      {
+        "id": "deck2",
+        "label": "Deck 2",
+        "position": {
+          "x": 980,
+          "y": 740
+        },
+        "facing": "down",
+        "contents": [
+          {
+            "card": "build",
+            "count": 8
+          },
+          {
+            "card": "refactor",
+            "count": 4
+          },
+          {
+            "card": "crunch",
+            "count": 2
+          },
+          {
+            "card": "modular-design",
+            "count": 2
+          },
+          {
+            "card": "test",
+            "count": 2
+          },
+          {
+            "card": "backup",
+            "count": 2
+          }
+        ],
+        "arrangement": "shuffled",
+        "group": "group-1",
+        "owner": 1,
+        "role": "deck"
+      },
+      {
+        "id": "hand2",
+        "label": "Hand 2",
+        "position": {
+          "x": 840,
+          "y": 500
+        },
+        "facing": "up",
+        "contents": [],
+        "layout": "row",
+        "width": 4,
+        "group": "group-1",
+        "owner": 1,
+        "role": "hand"
+      },
+      {
+        "id": "build2",
+        "label": "Build Zone 2",
+        "position": {
+          "x": 840,
+          "y": 260
+        },
+        "facing": "up",
+        "contents": [],
+        "layout": "row",
+        "group": "group-1",
+        "owner": 1,
+        "role": "build"
+      },
+      {
+        "id": "discard2",
+        "label": "Discard2",
+        "position": {
+          "x": 840,
+          "y": 740
+        },
+        "facing": "up",
+        "contents": [],
+        "group": "group-1",
+        "owner": 1,
+        "role": "deck-discard"
+      },
+      {
+        "id": "game-rules",
+        "label": "Game Rules",
+        "position": {
+          "x": 1280,
+          "y": 0
+        },
+        "facing": "up",
+        "contents": [
+          {
+            "card": "rule-taking-a-turn",
+            "count": 1
+          },
+          {
+            "card": "rule-preparation",
+            "count": 1
+          },
+          {
+            "card": "rule-winning",
+            "count": 1
+          }
+        ],
+        "layout": "row",
+        "group": "group-3"
+      }
+    ],
+    "buttons": [
+      {
+        "role": "hand",
+        "label": "draw 4",
+        "effects": [
+          {
+            "$type": "Deal",
+            "from": {
+              "same": "deck"
+            },
+            "to": {
+              "same": "hand"
+            },
+            "count": 4
+          }
+        ]
+      },
+      {
+        "stackId": "event-discard",
+        "label": "refresh events",
+        "effects": [
+          {
+            "$type": "Deal",
+            "from": "event-discard",
+            "to": "events",
+            "count": 100
+          }
+        ]
+      },
+      {
+        "stackId": "feature-discard",
+        "label": "refresh features",
+        "effects": [
+          {
+            "$type": "Deal",
+            "from": "feature-discard",
+            "to": "features",
+            "count": 100
+          }
+        ]
+      },
+      {
+        "role": "hand",
+        "label": "discard",
+        "effects": [
+          {
+            "$type": "Deal",
+            "from": {
+              "same": "hand"
+            },
+            "to": {
+              "same": "deck-discard"
+            },
+            "count": 10
+          }
+        ]
+      },
+      {
+        "stackId": "project-zone",
+        "label": "new project",
+        "effects": [
+          {
+            "$type": "Deal",
+            "from": "features",
+            "to": "project-zone",
+            "count": 3
+          }
+        ]
+      },
+      {
+        "role": "deck-discard",
+        "label": "refresh deck",
+        "effects": [
+          {
+            "$type": "Deal",
+            "from": {
+              "same": "deck-discard"
+            },
+            "to": {
+              "same": "deck"
+            },
+            "count": 100
+          }
+        ]
+      },
+      {
+        "stackId": "play",
+        "label": "End Turn",
+        "effects": [
+          {
+            "$type": "Deal",
+            "from": {
+              "role": "hand"
+            },
+            "to": {
+              "role": "deck-discard"
+            },
+            "count": 100
+          },
+          "EndTurn"
+        ]
+      }
+    ],
+    "groups": [
+      {
+        "id": "group-0",
+        "name": "Player 1"
+      },
+      {
+        "id": "group-1",
+        "name": "Player 2"
+      },
+      {
+        "id": "group-2",
+        "name": "Global"
+      },
+      {
+        "id": "group-3",
+        "name": "Rules"
+      }
+    ]
+  },
+  "layout": {
+    "width": 130,
+    "height": 180,
+    "background": "#16161f",
+    "titleFont": 80,
+    "descriptionFont": 70,
+    "corner": {
+      "shape": "circle",
+      "fill": "outline",
+      "font": "inherit"
+    }
+  },
+  "players": 2
+}

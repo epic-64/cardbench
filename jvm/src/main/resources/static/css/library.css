@@ -609,6 +609,31 @@
   margin-left: auto;
 }
 
+/* A conditional effect stacks its condition row above its two nested branch blocks,
+   rather than flowing as one wrapped row like a leaf effect. */
+.editor-effect-if {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+/* The condition row: the kind select, threshold, filter, and stack on one line, with
+   the reorder/remove actions pinned right — the same shape as a leaf effect's content. */
+.editor-if-cond {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--gap-sm);
+}
+
+/* Each nested branch (Then/Else) is set in from the condition with an accent rail, so
+   the effects it owns read as belonging to the conditional. */
+.editor-effect-if .editor-rule-body {
+  margin-left: var(--gap-md);
+  padding-left: var(--gap-md);
+  border-top: none;
+  border-left: 1px solid var(--border-color);
+}
+
 /* One stack reference: the mode select sitting beside its id-or-role drop-down,
    kept on one line so the pair reads as a single field. */
 .editor-ref-inner {

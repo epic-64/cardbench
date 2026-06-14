@@ -228,6 +228,43 @@ class EngineSpec extends AnyWordSpec with Matchers:
   private def stackOf(state: GameState, id: StackId): Stack =
     state.stacks.find(_.id == id).get
 
+  // Drive a cascade to its settled table, auto-resuming every pause (a manual prompt,
+  // a stack choice, a card pick) the headless way — the shared driver the filtered-deal
+  // and conditional specs below run their button cascades through.
+  private def settle(progress: Progress): GameState = progress match
+    case Progress.Done(s)                => s
+    case Progress.Ran(s, _, rest)        => settle(Engine.step(s, rest, 0L).toOption.get)
+    case Progress.Await(s, _, _, rest)   => settle(Engine.step(s, rest, 0L).toOption.get)
+    case Progress.Choose(s, _, _, rest)  => settle(Engine.step(s, rest.drop(1), 0L).toOption.get)
+    case Progress.ChooseCard(s, _, rest) => settle(Engine.step(s, rest.drop(1), 0L).toOption.get)
+
+  // A pile interleaving debt and feature cards (debt#0, feature#1, debt#2, feature#3 from
+  // the top) over an empty sink: the table for a filtered deal, which must reach past the
+  // non-matching cards to the matching ones. Reuses `playCatalog` (build/debt/feature).
+  private val mixedSetup = GameSetup(
+    List(
+      StackSpec(
+        StackId("pile"),
+        "Pile",
+        Position(0, 0),
+        Facing.Up,
+        List(SpawnSpec(CardDefId("debt"), 1), SpawnSpec(CardDefId("feature"), 1), SpawnSpec(CardDefId("debt"), 1), SpawnSpec(CardDefId("feature"), 1)),
+      ),
+      StackSpec(StackId("out"), "Out", Position(0, 0), Facing.Up, Nil, persistent = true),
+    ),
+  )
+
+  // A hand holding two debt cards, a feature source, and an empty sink: the table a
+  // conditional reads, branching on how many debt cards the hand holds.
+  private val ifSetup = GameSetup(
+    List(
+      StackSpec(StackId("hand"), "Hand", Position(0, 0), Facing.Up, List(SpawnSpec(CardDefId("debt"), 2))),
+      StackSpec(StackId("src"), "Src", Position(0, 0), Facing.Down, List(SpawnSpec(CardDefId("feature"), 3))),
+      StackSpec(StackId("sink"), "Sink", Position(0, 0), Facing.Up, Nil, persistent = true),
+    ),
+  )
+  private val debtFilter = CardFilter(List(CardDefId("debt")))
+
   "Engine.setup" should:
 
     "spawn each definition's instances into its stack" in:
@@ -724,6 +761,56 @@ class EngineSpec extends AnyWordSpec with Matchers:
       Engine.buttonCascade(state, List(Effect.Deal(StackRef("debt"), StackRef.Owned("deck"), 2)), None) shouldBe
         Left(EngineError.UnresolvedRole("deck", 5))
 
+  "A filtered deal" should:
+
+    "move the top-most matching card, reaching past the cards above it" in:
+      val state = Engine.setup(playCatalog, Rulebook(Nil), mixedSetup)
+      val done  = settle(Engine.buttonCascade(state, List(Effect.Deal(StackRef("pile"), StackRef("out"), 1, debtFilter)), None).toOption.get)
+      stackOf(done, StackId("out")).cards.map(_.id) shouldBe List(CardId("pile#0"))
+
+    "deal several matching cards, leaving the non-matching ones behind" in:
+      val state = Engine.setup(playCatalog, Rulebook(Nil), mixedSetup)
+      val done  = settle(Engine.buttonCascade(state, List(Effect.Deal(StackRef("pile"), StackRef("out"), 2, debtFilter)), None).toOption.get)
+      stackOf(done, StackId("out")).cards.map(_.defId) shouldBe List(CardDefId("debt"), CardDefId("debt"))
+      stackOf(done, StackId("pile")).cards.map(_.defId) shouldBe List(CardDefId("feature"), CardDefId("feature"))
+
+    "stop leniently when the source holds no matching card" in:
+      val state = Engine.setup(playCatalog, Rulebook(Nil), mixedSetup)
+      val done  = settle(Engine.buttonCascade(state, List(Effect.Deal(StackRef("pile"), StackRef("out"), 1, CardFilter(List(CardDefId("build"))))), None).toOption.get)
+      stackOf(done, StackId("out")).cards shouldBe empty
+
+  "A conditional effect" should:
+
+    "run the then-branch when the count is met" in:
+      val cond  = Condition.CountAtLeast(StackRef("hand"), debtFilter, 2)
+      val state = Engine.setup(playCatalog, Rulebook(Nil), ifSetup)
+      val done  = settle(Engine.buttonCascade(state, List(Effect.If(cond, thenDo = List(Effect.Deal(StackRef("src"), StackRef("sink"), 1)))), None).toOption.get)
+      stackOf(done, StackId("sink")).cards.size shouldBe 1
+
+    "skip the then-branch when the count is not met" in:
+      val cond  = Condition.CountAtLeast(StackRef("hand"), debtFilter, 3)
+      val state = Engine.setup(playCatalog, Rulebook(Nil), ifSetup)
+      val done  = settle(Engine.buttonCascade(state, List(Effect.If(cond, thenDo = List(Effect.Deal(StackRef("src"), StackRef("sink"), 1)))), None).toOption.get)
+      stackOf(done, StackId("sink")).cards shouldBe empty
+
+    "run the else-branch when the count is not met" in:
+      val cond  = Condition.CountAtLeast(StackRef("hand"), debtFilter, 3)
+      val state = Engine.setup(playCatalog, Rulebook(Nil), ifSetup)
+      val done  = settle(Engine.buttonCascade(state, List(Effect.If(cond, elseDo = List(Effect.Deal(StackRef("src"), StackRef("sink"), 2)))), None).toOption.get)
+      stackOf(done, StackId("sink")).cards.size shouldBe 2
+
+  "A filtered move-chosen-card effect" should:
+
+    "leave the picked card to the player but only move it where authored" in:
+      // The filter rides on the effect through serialization and the cascade; the engine
+      // moves exactly the card the shell hands back (the shell gates the pick by filter).
+      val moveChosen = List(Effect.MoveChosen(StackRef("out"), filter = debtFilter))
+      val state      = Engine.setup(playCatalog, Rulebook(Nil), mixedSetup)
+      val Progress.ChooseCard(paused, _, rest) =
+        Engine.buttonCascade(state, moveChosen, None).toOption.get: @unchecked
+      val Progress.Ran(done, _, _) = Engine.step(paused, Engine.applyCardChoice(rest, CardId("pile#2")), 0L).toOption.get: @unchecked
+      stackOf(done, StackId("out")).cards.map(_.id) shouldBe List(CardId("pile#2"))
+
   "JSON codecs" should:
 
     "round-trip a catalog unchanged" in:
@@ -767,6 +854,19 @@ class EngineSpec extends AnyWordSpec with Matchers:
 
     "round-trip a move-chosen-card effect unchanged" in:
       read[Effect](write(Effect.MoveChosen(StackRef("discard")))) shouldBe Effect.MoveChosen(StackRef("discard"))
+
+    "round-trip a filtered deal unchanged" in:
+      val deal = Effect.Deal(StackRef("a"), StackRef("b"), 2, debtFilter)
+      read[Effect](write(deal)) shouldBe deal
+
+    "read a legacy deal with no filter as one that matches every card" in:
+      val legacy = """{"$type":"Deal","from":"a","to":"b","count":2}"""
+      read[Effect](legacy) shouldBe Effect.Deal(StackRef("a"), StackRef("b"), 2)
+
+    "round-trip a conditional effect (both branches) unchanged" in:
+      val cond = Condition.CountAtLeast(StackRef.Owned("hand"), debtFilter, 2)
+      val eff  = Effect.If(cond, thenDo = List(Effect.Deal(StackRef("src"), StackRef("sink"), 1)), elseDo = List(Effect.EndTurn))
+      read[Effect](write(eff)) shouldBe eff
 
     "round-trip a setup unchanged" in:
       read[GameSetup](write(setup)) shouldBe setup

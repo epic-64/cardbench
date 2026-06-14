@@ -184,7 +184,7 @@ object Engine:
           // A `MoveChosen` with no card yet pauses for the player to pick one — before
           // any stack choice on its `to`, so the card is chosen first. The whole queue
           // rides along for `applyCardChoice` to fill and the shell to step on.
-          case Effect.MoveChosen(_, None) => Right(Progress.ChooseCard(state, card, pending))
+          case Effect.MoveChosen(_, None, _) => Right(Progress.ChooseCard(state, card, pending))
           case _ =>
             firstChoice(effect) match
               // A `Choice` target can't resolve headlessly: pause and let the player name
@@ -218,17 +218,18 @@ object Engine:
               case Right(stack) =>
                 val stackSeed = seed ^ stack.value.hashCode.toLong
                 shuffle(state, stack, stackSeed).map(reordered => Progress.Ran(reordered, List(Step.Shuffle(stack, stackSeed)), rest))
-          case Effect.Deal(_, _, count) if count <= 0 =>
+          case Effect.Deal(_, _, count, _) if count <= 0 =>
             step(state, rest, seed)
-          case Effect.Deal(fromRef, toRef, count) =>
-            // Resolve both ends first; a missing source or empty stack (or, for a
-            // role ref, a player who owns no such stack) just stops the deal when
-            // lenient, and aborts the cascade otherwise.
+          case Effect.Deal(fromRef, toRef, count, filter) =>
+            // Resolve both ends first; a missing source, an empty stack, or a source
+            // holding no card the filter matches (or, for a role ref, a player who owns
+            // no such stack) just stops the deal when lenient, and aborts otherwise. The
+            // filter reaches past the literal top to the top-most matching card.
             val resolved =
               for
                 from <- resolveRef(state, fromRef)
                 to   <- resolveRef(state, toRef)
-                top  <- find(state, from).flatMap(_.cards.headOption.toRight(EmptyStack(from)))
+                top  <- find(state, from).flatMap(_.cards.find(c => filter.matches(c.defId)).toRight(EmptyStack(from)))
               yield (from, to, top)
             resolved match
               case Left(err) if lenient && lenientStop(err) => step(state, rest, seed)
@@ -237,8 +238,14 @@ object Engine:
                 resolveOne(state, top.id, to, seed).map: (moved, steps, triggered) =>
                   // Reactions resolve before the next dealt card: the move's own
                   // triggers go ahead of this deal's remaining count and the rest.
-                  Progress.Ran(moved, steps, triggered ++ (Pending(card, Effect.Deal(StackRef.Fixed(from), toRef, count - 1), lenient) :: rest))
-          case Effect.MoveChosen(toRef, chosen) =>
+                  Progress.Ran(moved, steps, triggered ++ (Pending(card, Effect.Deal(StackRef.Fixed(from), toRef, count - 1, filter), lenient) :: rest))
+          case Effect.If(cond, thenDo, elseDo) =>
+            // Read the table and branch: splice the taken branch's effects to the front
+            // of the queue (tagged with this effect's own `card` and lenience) and step
+            // straight on. The `If` itself produces no animatable step.
+            val branch = if conditionHolds(state, cond) then thenDo else elseDo
+            step(state, branch.map(e => Pending(card, e, lenient)) ::: rest, seed)
+          case Effect.MoveChosen(toRef, chosen, _) =>
             // The card was picked in `step` (`MoveChosen(_, None)` pauses there), and
             // any `Choice` on `toRef` was resolved before this point, so both ends are
             // ready. The picked card might have since left the table (an earlier effect
@@ -434,11 +441,26 @@ object Engine:
   // Resolve the `Same` references in one effect's stack targets against `hostOwner`
   // (see `anchorRef`); `Manual` and `EndTurn` carry no target and pass through.
   private def anchorEffect(state: GameState, effect: Effect, hostOwner: Option[Int]): Either[EngineError, Effect] = effect match
-    case Effect.Deal(from, to, count) =>
-      for f <- anchorRef(state, from, hostOwner); t <- anchorRef(state, to, hostOwner) yield Effect.Deal(f, t, count)
-    case Effect.Shuffle(stack)       => anchorRef(state, stack, hostOwner).map(Effect.Shuffle(_))
-    case Effect.MoveChosen(to, card) => anchorRef(state, to, hostOwner).map(Effect.MoveChosen(_, card))
-    case other                       => Right(other)
+    case Effect.Deal(from, to, count, filter) =>
+      for f <- anchorRef(state, from, hostOwner); t <- anchorRef(state, to, hostOwner) yield Effect.Deal(f, t, count, filter)
+    case Effect.Shuffle(stack)               => anchorRef(state, stack, hostOwner).map(Effect.Shuffle(_))
+    case Effect.MoveChosen(to, card, filter) => anchorRef(state, to, hostOwner).map(Effect.MoveChosen(_, card, filter))
+    // An `If` carries its branches' effects through the cascade still wrapped, so anchor
+    // them — and its condition's `where` — now, while the host owner is known, since they
+    // are spliced into the queue at step time without passing back through `anchorAll`.
+    case Effect.If(cond, thenDo, elseDo) =>
+      for
+        c <- anchorCondition(state, cond, hostOwner)
+        t <- anchorAll(state, thenDo, hostOwner)
+        e <- anchorAll(state, elseDo, hostOwner)
+      yield Effect.If(c, t, e)
+    case other => Right(other)
+
+  // Resolve a `Same` reference in a condition's `where` against `hostOwner`, exactly as
+  // `anchorEffect` does for an effect's targets.
+  private def anchorCondition(state: GameState, cond: Condition, hostOwner: Option[Int]): Either[EngineError, Condition] = cond match
+    case Condition.CountAtLeast(where, filter, n) =>
+      anchorRef(state, where, hostOwner).map(Condition.CountAtLeast(_, filter, n))
 
   // Resolve the `Same` references across a whole effects list against `hostOwner`,
   // short-circuiting on the first one no stack satisfies.
@@ -450,27 +472,39 @@ object Engine:
   // label for what it is — drives the play-time pause (`Progress.Choose`). `None`
   // when every target is already concrete or player-relative.
   private def firstChoice(effect: Effect): Option[String] = effect match
-    case Effect.Deal(StackRef.Choice, _, _)            => Some("from")
-    case Effect.Deal(_, StackRef.Choice, _)            => Some("to")
-    case Effect.Shuffle(StackRef.Choice)               => Some("stack")
+    case Effect.Deal(StackRef.Choice, _, _, _)          => Some("from")
+    case Effect.Deal(_, StackRef.Choice, _, _)          => Some("to")
+    case Effect.Shuffle(StackRef.Choice)                => Some("stack")
     // Only once the card has been picked; a card-less MoveChosen pauses in `step` first.
-    case Effect.MoveChosen(StackRef.Choice, Some(_))   => Some("to")
-    case _                                             => None
+    case Effect.MoveChosen(StackRef.Choice, Some(_), _) => Some("to")
+    case _                                              => None
 
   // Replace the first `StackRef.Choice` target in an effect with the picked stack —
   // the resolve step `applyChoice` performs once the player has chosen.
   private def fillChoice(effect: Effect, stack: StackId): Effect = effect match
-    case d @ Effect.Deal(StackRef.Choice, _, _) => d.copy(from = StackRef.Fixed(stack))
-    case d @ Effect.Deal(_, StackRef.Choice, _) => d.copy(to = StackRef.Fixed(stack))
-    case Effect.Shuffle(StackRef.Choice)        => Effect.Shuffle(StackRef.Fixed(stack))
-    case m @ Effect.MoveChosen(StackRef.Choice, _) => m.copy(to = StackRef.Fixed(stack))
-    case other                                  => other
+    case d @ Effect.Deal(StackRef.Choice, _, _, _) => d.copy(from = StackRef.Fixed(stack))
+    case d @ Effect.Deal(_, StackRef.Choice, _, _) => d.copy(to = StackRef.Fixed(stack))
+    case Effect.Shuffle(StackRef.Choice)           => Effect.Shuffle(StackRef.Fixed(stack))
+    case m @ Effect.MoveChosen(StackRef.Choice, _, _) => m.copy(to = StackRef.Fixed(stack))
+    case other                                     => other
 
   // Record the picked card into a `MoveChosen` — the resolve `applyCardChoice` does
   // once the player has clicked one.
   private def fillCard(effect: Effect, chosen: CardId): Effect = effect match
-    case m @ Effect.MoveChosen(_, None) => m.copy(card = Some(chosen))
-    case other                          => other
+    case m @ Effect.MoveChosen(_, None, _) => m.copy(card = Some(chosen))
+    case other                             => other
+
+  /** Whether a condition holds against the table now (see `Effect.If`). A `CountAtLeast`
+    * resolves its `where` ref (an `Owned` ref against the current player) and counts the
+    * cards there matching its filter; an unresolvable or missing stack counts as zero, so
+    * the condition simply reads false rather than aborting the cascade.
+    */
+  private def conditionHolds(state: GameState, cond: Condition): Boolean = cond match
+    case Condition.CountAtLeast(where, filter, n) =>
+      resolveRef(state, where)
+        .flatMap(find(state, _))
+        .map(_.cards.count(c => filter.matches(c.defId)) >= n)
+        .getOrElse(false)
 
   /** Whether `trigger` fires on `event` against this table. The trigger's `to`
     * reference is resolved here (an `Owned` ref against the current player), so a
