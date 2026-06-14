@@ -157,4 +157,4 @@ object SampleGame:
     * starts from on a fresh browser, and the template "New game" clones.
     */
   val definition: GameDefinition =
-    GameDefinition("sample", "Sample: Dev Deck", catalog, rulebook, setup)
+    GameDefinition("sample", "Sample: Dev Deck", catalog, rulebook, setup, players = 2)

@@ -173,6 +173,21 @@ class EngineSpec extends AnyWordSpec with Matchers:
     "carry a stack's layout onto the table" in:
       stackOf(Engine.setup(playCatalog, rulebook, playSetup), StackId("build-zone")).layout shouldBe Layout.Row
 
+    "start on the first player" in:
+      Engine.setup(catalog, rulebook, setup).currentPlayer shouldBe 0
+
+  "Engine.endTurn" should:
+
+    "pass the turn to the next player" in:
+      Engine.endTurn(Engine.setup(catalog, rulebook, setup), 3).currentPlayer shouldBe 1
+
+    "wrap back to the first player after the last" in:
+      val lastPlayer = Engine.setup(catalog, rulebook, setup).copy(currentPlayer = 2)
+      Engine.endTurn(lastPlayer, 3).currentPlayer shouldBe 0
+
+    "leave a solitaire game on the first player" in:
+      Engine.endTurn(Engine.setup(catalog, rulebook, setup), 1).currentPlayer shouldBe 0
+
   "Engine.shuffle" should:
 
     "reproduce the same order for the same seed" in:

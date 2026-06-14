@@ -267,12 +267,14 @@ case class Stack(
 /** The whole table: the single source of truth. `catalog` is the registry of
   * card kinds for rendering; `rules` is the effect system — the reactions the
   * engine fires as cards move (see `Engine.dropSteps`). An event matching no rule
-  * passes without consequence.
+  * passes without consequence. `currentPlayer` is whose turn it is — a 0-based
+  * index into the game's players, advanced by `Engine.endTurn`.
   */
 case class GameState(
   catalog: Map[CardDefId, CardDef],
   rules: List[Rule],
   stacks: List[Stack],
+  currentPlayer: Int = 0,
 )
 
 /** A move that could not be applied. Verbs return these instead of throwing. */

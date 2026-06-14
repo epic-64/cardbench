@@ -37,6 +37,14 @@ object Engine:
       )
     GameState(defs, rulebook.rules, stacks)
 
+  /** Pass the turn to the next player, wrapping back to the first after the last.
+    * `players` is the game's player count; one or fewer players leaves the turn
+    * on player 0, so a solitaire game has nothing to advance.
+    */
+  def endTurn(state: GameState, players: Int): GameState =
+    if players <= 1 then state.copy(currentPlayer = 0)
+    else state.copy(currentPlayer = (state.currentPlayer + 1) % players)
+
   /** Reorder one stack using a seeded RNG. Same seed ⇒ same order. Marks the
     * stack `shuffled` until something touches its cards again.
     */

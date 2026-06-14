@@ -54,6 +54,19 @@
   font-size: 0.95rem;
 }
 
+/* Turn tracker: whose turn it is, beside the End turn button. */
+.turn-control {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.turn-indicator {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
 /* Card-text size stepper: the two A−/A+ buttons hug a live percentage readout. */
 .font-control {
   display: flex;

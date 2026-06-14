@@ -15,4 +15,5 @@ case class GameDefinition(
   rulebook: Rulebook,
   setup: GameSetup,
   layout: CardLayout = CardLayout.default, // the shared card template; defaulted so games authored before it load unchanged
+  players: Int = 1,                        // how many players take turns; defaulted so games authored before turns existed load as solitaire
 ) derives ReadWriter
