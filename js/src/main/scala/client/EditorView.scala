@@ -53,6 +53,35 @@ object EditorView:
     // title or colour keystroke).
     val cardIds  = draft.signal.map(_.catalog.cards.map(_.id.value)).distinct
     val stackIds = draft.signal.map(_.setup.stacks.map(_.id.value)).distinct
+    // The roles a player-relative reference can name: every distinct, non-empty role
+    // an owned stack declares. Keeps a role drop-down in step as stacks are tagged.
+    val roleIds  = draft.signal.map(_.setup.stacks.collect { case s if s.owner.isDefined && s.role.nonEmpty => s.role }.distinct).distinct
+
+    // One authored stack reference: a mode toggle between a *specific stack* (a fixed
+    // id, the only kind before player ownership) and the *current player's* stack of
+    // a given role, with the matching id/role drop-down beside it. Rebuilds only when
+    // the mode flips, so picking within a mode never disturbs the row.
+    def stackRefField(name: String, refSig: Signal[StackRef], onChange: StackRef => Unit): Element =
+      div(
+        cls := "editor-ref",
+        child <-- refSig.map(_.isInstanceOf[StackRef.Owned]).distinct.map { owned =>
+          val mode = selectField(
+            name,
+            refModeOptions,
+            if owned then "role" else "stack",
+            {
+              case "role" => onChange(StackRef.Owned(""))
+              case _      => onChange(StackRef.Fixed(StackId("")))
+            },
+          )
+          val input =
+            if owned then
+              idSelectField("role of current player", roleIds, refSig.map(roleOf).distinct, v => onChange(StackRef.Owned(v)))
+            else
+              idSelectField("stack", stackIds, refSig.map(fixedOf).distinct, v => onChange(StackRef.Fixed(StackId(v))))
+          div(cls := "editor-ref-inner", mode, input)
+        },
+      )
 
     // ── catalog ──────────────────────────────────────────────────────────────
     def setCards(f: List[CardDef] => List[CardDef]): Unit =
@@ -108,7 +137,7 @@ object EditorView:
     // The trigger is always a `Moved(card, to)`; edit one field, keep the other.
     def setTriggerCard(i: Int, card: CardDefId): Unit =
       updateRule(i)(r => r.trigger match { case Trigger.Moved(_, to) => r.copy(trigger = Trigger.Moved(card, to)) })
-    def setTriggerTo(i: Int, to: StackId): Unit =
+    def setTriggerTo(i: Int, to: StackRef): Unit =
       updateRule(i)(r => r.trigger match { case Trigger.Moved(c, _) => r.copy(trigger = Trigger.Moved(c, to)) })
 
     def effectRow(i: Int, j: Int): Element =
@@ -141,10 +170,10 @@ object EditorView:
           val k = j + delta
           r.effects.lift(k).fold(r)(_ => r.copy(effects = r.effects.updated(j, r.effects(k)).updated(k, r.effects(j))))
         reorderTick.update(_ + 1)
-      def dealField(pick: Effect.Deal => String): Signal[String] =
-        draft.signal.map(_.rulebook.rules.lift(i).flatMap(_.effects.lift(j)) match { case Some(d: Effect.Deal) => pick(d); case _ => "" }).distinct
-      def shuffleField: Signal[String] =
-        draft.signal.map(_.rulebook.rules.lift(i).flatMap(_.effects.lift(j)) match { case Some(s: Effect.Shuffle) => s.stack.value; case _ => "" }).distinct
+      def dealRef(pick: Effect.Deal => StackRef): Signal[StackRef] =
+        draft.signal.map(_.rulebook.rules.lift(i).flatMap(_.effects.lift(j)) match { case Some(d: Effect.Deal) => pick(d); case _ => StackRef("") }).distinct
+      def shuffleRef: Signal[StackRef] =
+        draft.signal.map(_.rulebook.rules.lift(i).flatMap(_.effects.lift(j)) match { case Some(s: Effect.Shuffle) => s.stack; case _ => StackRef("") }).distinct
       val effect    = draft.now().rulebook.rules(i).effects(j)
       val count     = draft.now().rulebook.rules(i).effects.size
       // One type select per effect; picking another kind rewrites this slot. The
@@ -163,8 +192,8 @@ object EditorView:
           div(
             cls := "editor-effect",
             kindField,
-            idSelectField("from", stackIds, dealField(_.from.value), v => updateDeal(_.copy(from = StackId(v)))),
-            idSelectField("to", stackIds, dealField(_.to.value), v => updateDeal(_.copy(to = StackId(v)))),
+            stackRefField("from", dealRef(_.from), ref => updateDeal(_.copy(from = ref))),
+            stackRefField("to", dealRef(_.to), ref => updateDeal(_.copy(to = ref))),
             numberField("Count", dealCount, n => updateDeal(_.copy(count = n))),
             actions,
           )
@@ -172,7 +201,7 @@ object EditorView:
           div(
             cls := "editor-effect",
             kindField,
-            idSelectField("Stack", stackIds, shuffleField, v => updateShuffle(_.copy(stack = StackId(v)))),
+            stackRefField("Stack", shuffleRef, ref => updateShuffle(_.copy(stack = ref))),
             actions,
           )
         case Effect.Manual(description) =>
@@ -186,8 +215,8 @@ object EditorView:
     def ruleRow(i: Int): Element =
       def triggerCard: Signal[String] =
         draft.signal.map(_.rulebook.rules.lift(i).map(_.trigger) match { case Some(Trigger.Moved(c, _)) => c.value; case _ => "" }).distinct
-      def triggerTo: Signal[String] =
-        draft.signal.map(_.rulebook.rules.lift(i).map(_.trigger) match { case Some(Trigger.Moved(_, s)) => s.value; case _ => "" }).distinct
+      def triggerToRef: Signal[StackRef] =
+        draft.signal.map(_.rulebook.rules.lift(i).map(_.trigger) match { case Some(Trigger.Moved(_, to)) => to; case _ => StackRef("") }).distinct
       // Rebuild the effect rows when one is added, removed, *or* retyped: the signal
       // keys off the list of effect kinds, not just its length, so switching a Deal
       // to a Shuffle re-renders that row with the new effect's fields.
@@ -199,7 +228,7 @@ object EditorView:
           cls := "editor-rule-head",
           span(cls := "rule-badge", "When"),
           idSelectField("Card", cardIds, triggerCard, v => setTriggerCard(i, CardDefId(v))),
-          idSelectField("lands on stack", stackIds, triggerTo, v => setTriggerTo(i, StackId(v))),
+          stackRefField("lands on stack", triggerToRef, ref => setTriggerTo(i, ref)),
           removeButton(() => setRules(rs => rs.patch(i, Nil, 1))),
         ),
         div(
@@ -207,7 +236,7 @@ object EditorView:
           div(
             cls := "editor-rule-effects-head",
             span(cls := "rule-badge rule-badge-then", "Then"),
-            addButton("+ Add effect", () => updateRule(i)(r => r.copy(effects = r.effects :+ Effect.Deal(StackId(""), StackId(""))))),
+            addButton("+ Add effect", () => updateRule(i)(r => r.copy(effects = r.effects :+ Effect.Deal(StackRef(""), StackRef(""))))),
           ),
           div(cls := "editor-effects", children <-- effectKinds.combineWith(reorderTick.signal).map((kinds, _) => kinds.indices.toList.map(j => effectRow(i, j)))),
         ),
@@ -216,7 +245,7 @@ object EditorView:
     val rulesSection = section(
       "Rules",
       "+ Add rule",
-      () => setRules(_ :+ Rule(Trigger.Moved(CardDefId(""), StackId("")), Nil)),
+      () => setRules(_ :+ Rule(Trigger.Moved(CardDefId(""), StackRef("")), Nil)),
       draft.signal.map(_.rulebook.rules.size),
       ruleRow,
     )
@@ -226,6 +255,12 @@ object EditorView:
       draft.update(d => d.copy(setup = d.setup.copy(stacks = f(d.setup.stacks))))
     def updateStack(i: Int)(f: StackSpec => StackSpec): Unit =
       setStacks(ss => ss.lift(i).fold(ss)(s => ss.updated(i, f(s))))
+
+    // The ownership choices for a stack: Global (shared, no player) or one of the
+    // game's players. Read from the current player count, which the game's Players
+    // field sets — so adding a player widens this on the next stack-row rebuild.
+    def ownerOptions(): List[(String, Option[Int])] =
+      ("Global" -> Option.empty[Int]) :: (0 until draft.now().players).toList.map(p => s"Player ${p + 1}" -> Some(p))
 
     def spawnRow(i: Int, j: Int): Element =
       def updateSpawn(g: SpawnSpec => SpawnSpec): Unit =
@@ -296,6 +331,13 @@ object EditorView:
           child <-- isRow.map:
             case true  => numberField("Width", draft.now().setup.stacks.lift(i).fold(3)(_.areaWidth), n => updateStack(i)(_.copy(width = Some(n))))
             case false => emptyNode,
+        ),
+        // Player ownership: which player this stack belongs to (Global = shared) and
+        // its role — the slot a player-relative rule (StackRef.Owned) resolves to.
+        div(
+          cls := "editor-row",
+          selectField("Owner", ownerOptions(), s.owner, o => updateStack(i)(_.copy(owner = o))),
+          textField("Role", s.role, v => updateStack(i)(_.copy(role = v))),
         ),
         contentsSubsection(i),
       )
@@ -662,6 +704,17 @@ object EditorView:
   // across so retyping doesn't blank the row.
   private val effectKindOptions = List("Deal" -> "deal", "Shuffle" -> "shuffle", "Manual" -> "manual")
 
+  // A stack reference is a tagged choice between a fixed stack and the current
+  // player's stack of a role; these read its two sides for the drop-downs.
+  private val refModeOptions = List("Stack" -> "stack", "Role" -> "role")
+
+  private def fixedOf(ref: StackRef): String = ref match
+    case StackRef.Fixed(id) => id.value
+    case _: StackRef.Owned  => ""
+  private def roleOf(ref: StackRef): String = ref match
+    case StackRef.Owned(role) => role
+    case _: StackRef.Fixed    => ""
+
   private def effectKind(e: Effect): String = e match
     case _: Effect.Deal    => "deal"
     case _: Effect.Shuffle => "shuffle"
@@ -670,10 +723,10 @@ object EditorView:
   private def withEffectKind(e: Effect, kind: String): Effect = (e, kind) match
     case (d: Effect.Deal, "shuffle")    => Effect.Shuffle(d.from)
     case (d: Effect.Deal, "manual")     => Effect.Manual("")
-    case (s: Effect.Shuffle, "deal")    => Effect.Deal(s.stack, StackId(""))
+    case (s: Effect.Shuffle, "deal")    => Effect.Deal(s.stack, StackRef(""))
     case (_: Effect.Shuffle, "manual")  => Effect.Manual("")
-    case (_: Effect.Manual, "deal")     => Effect.Deal(StackId(""), StackId(""))
-    case (_: Effect.Manual, "shuffle")  => Effect.Shuffle(StackId(""))
+    case (_: Effect.Manual, "deal")     => Effect.Deal(StackRef(""), StackRef(""))
+    case (_: Effect.Manual, "shuffle")  => Effect.Shuffle(StackRef(""))
     case (other, _)                     => other
 
   // A button's action is a tagged choice ("from"/"to") carrying a stack and a

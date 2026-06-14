@@ -24,6 +24,38 @@ object StackId:
   extension (id: StackId) def value: String = id
   given ReadWriter[StackId] = readwriter[String].bimap(_.value, apply)
 
+/** How a rule names a stack. `Fixed` is a concrete stack id — the only kind games
+  * had before player ownership existed, and still how global stacks (the Play zone,
+  * the shared decks) are referenced. `Owned` is *player-relative*: it names a
+  * `role` (a slot every player owns one of — `"deck"`, `"build"`, `"discard"`) and
+  * resolves at run time to the stack with that role owned by the *current* player
+  * (see `GameState.currentPlayer` and `Engine.resolveRef`). One `Owned`-referencing
+  * rule serves every player, so a turn-based game needs no per-player duplicates.
+  */
+enum StackRef:
+  case Fixed(id: StackId)
+  case Owned(role: String)
+
+object StackRef:
+  // A concrete-stack reference straight from its id string — the common case, so
+  // authored rules read `StackRef("play")` rather than `StackRef.Fixed(StackId("play"))`.
+  def apply(id: String): StackRef = Fixed(StackId(id))
+
+  // On the wire a `Fixed` ref is just its bare string — exactly the shape every
+  // game saved before roles existed already uses, so those files still load — and
+  // an `Owned` ref is a small object carrying its role.
+  given ReadWriter[StackRef] = readwriter[ujson.Value].bimap(
+    {
+      case StackRef.Fixed(id)   => ujson.Str(id.value)
+      case StackRef.Owned(role) => ujson.Obj("role" -> ujson.Str(role))
+    },
+    {
+      case ujson.Str(id)  => StackRef.Fixed(StackId(id))
+      case obj: ujson.Obj => StackRef.Owned(obj("role").str)
+      case other          => sys.error(s"Unknown stack reference: $other")
+    },
+  )
+
 // ── Cards & table ─────────────────────────────────────────────────────────────
 
 /** Which side is showing. `Up` = front (the CardDef); `Down` = the shared back. */
@@ -55,8 +87,8 @@ object Facing:
   * composes from these.
   */
 enum Effect derives ReadWriter:
-  case Deal(from: StackId, to: StackId, count: Int = 1)
-  case Shuffle(stack: StackId)
+  case Deal(from: StackRef, to: StackRef, count: Int = 1)
+  case Shuffle(stack: StackRef)
   case Manual(description: String)
 
 /** One atomic, animatable change in a cascade: relocate a single card, flip one,
@@ -262,6 +294,12 @@ case class Stack(
   shuffled: Boolean = false,
   persistent: Boolean = false,
   layout: Layout = Layout.Pile,
+  // Which player this stack belongs to (`None` = a shared/global stack like the
+  // Play zone or a common deck), and its `role` — the slot key a player-relative
+  // rule resolves against (see `StackRef.Owned`). Defaulted so games authored
+  // before player ownership load as all-global, role-less stacks.
+  owner: Option[Int] = None,
+  role: String = "",
 ) derives ReadWriter
 
 /** The whole table: the single source of truth. `catalog` is the registry of
@@ -283,3 +321,6 @@ enum EngineError:
   case UnknownCard(id: CardId)
   case UnknownCardDef(id: CardDefId)
   case EmptyStack(id: StackId)
+  // A player-relative reference (`StackRef.Owned`) that no stack satisfies: the
+  // current player owns no stack of that role.
+  case UnresolvedRole(role: String, player: Int)
