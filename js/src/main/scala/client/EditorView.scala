@@ -159,6 +159,8 @@ object EditorView:
           update(es => es.lift(j).fold(es) { case d: Effect.Deal => es.updated(j, g(d)); case _ => es })
         def updateShuffle(g: Effect.Shuffle => Effect.Shuffle): Unit =
           update(es => es.lift(j).fold(es) { case s: Effect.Shuffle => es.updated(j, g(s)); case _ => es })
+        def updateMoveChosen(g: Effect.MoveChosen => Effect.MoveChosen): Unit =
+          update(es => es.lift(j).fold(es) { case m: Effect.MoveChosen => es.updated(j, g(m)); case _ => es })
         def updateManual(g: Effect.Manual => Effect.Manual): Unit =
           update(es => es.lift(j).fold(es) { case m: Effect.Manual => es.updated(j, g(m)); case _ => es })
         def setEffectKind(kind: String): Unit =
@@ -176,6 +178,8 @@ object EditorView:
           effectsSig.map(_.lift(j) match { case Some(d: Effect.Deal) => pick(d); case _ => StackRef("") }).distinct
         def shuffleRef: Signal[StackRef] =
           effectsSig.map(_.lift(j) match { case Some(s: Effect.Shuffle) => s.stack; case _ => StackRef("") }).distinct
+        def moveChosenRef: Signal[StackRef] =
+          effectsSig.map(_.lift(j) match { case Some(m: Effect.MoveChosen) => m.to; case _ => StackRef("") }).distinct
         val effect    = read().lift(j).getOrElse(Effect.Manual(""))
         val count     = read().size
         // One type select per effect; picking another kind rewrites this slot. The
@@ -197,6 +201,15 @@ object EditorView:
               stackRefField("from", dealRef(_.from), ref => updateDeal(_.copy(from = ref))),
               stackRefField("to", dealRef(_.to), ref => updateDeal(_.copy(to = ref))),
               numberField("Count", dealCount, n => updateDeal(_.copy(count = n))),
+              actions,
+            )
+          case _: Effect.MoveChosen =>
+            div(
+              cls := "editor-effect",
+              kindField,
+              // The card is picked by the player at play time (top of a pile, or a
+              // specific card in a row); only its destination is authored here.
+              stackRefField("to", moveChosenRef, ref => updateMoveChosen(_.copy(to = ref))),
               actions,
             )
           case _: Effect.Shuffle =>
@@ -738,7 +751,8 @@ object EditorView:
   // An effect is a tagged choice too: a single "+ Add effect" button drops in a
   // Deal, and a per-row type select swaps between the kinds, carrying a stack id
   // across so retyping doesn't blank the row.
-  private val effectKindOptions = List("Deal" -> "deal", "Shuffle" -> "shuffle", "Manual" -> "manual", "End turn" -> "endturn")
+  private val effectKindOptions =
+    List("Deal" -> "deal", "Move chosen card" -> "movechosen", "Shuffle" -> "shuffle", "Manual" -> "manual", "End turn" -> "endturn")
 
   // A stack reference is a tagged choice between a fixed stack, the current player's
   // stack of a role, and a target the player picks at play time. The labels spell
@@ -762,20 +776,31 @@ object EditorView:
     case _                    => ""
 
   private def effectKind(e: Effect): String = e match
-    case _: Effect.Deal    => "deal"
-    case _: Effect.Shuffle => "shuffle"
-    case _: Effect.Manual  => "manual"
-    case Effect.EndTurn    => "endturn"
+    case _: Effect.Deal       => "deal"
+    case _: Effect.MoveChosen => "movechosen"
+    case _: Effect.Shuffle    => "shuffle"
+    case _: Effect.Manual     => "manual"
+    case Effect.EndTurn       => "endturn"
 
+  // Switching an effect's kind carries its primary stack reference across where it
+  // makes sense (a Deal's `from`, a Shuffle's `stack`, a MoveChosen's `to`), so
+  // retyping a row doesn't blank a target the author already set.
   private def withEffectKind(e: Effect, kind: String): Effect = (e, kind) match
-    case (_, "endturn")                 => Effect.EndTurn
-    case (Effect.EndTurn, "deal")       => Effect.Deal(StackRef(""), StackRef(""))
-    case (Effect.EndTurn, "shuffle")    => Effect.Shuffle(StackRef(""))
-    case (Effect.EndTurn, "manual")     => Effect.Manual("")
-    case (d: Effect.Deal, "shuffle")    => Effect.Shuffle(d.from)
-    case (d: Effect.Deal, "manual")     => Effect.Manual("")
-    case (s: Effect.Shuffle, "deal")    => Effect.Deal(s.stack, StackRef(""))
-    case (_: Effect.Shuffle, "manual")  => Effect.Manual("")
-    case (_: Effect.Manual, "deal")     => Effect.Deal(StackRef(""), StackRef(""))
-    case (_: Effect.Manual, "shuffle")  => Effect.Shuffle(StackRef(""))
-    case (other, _)                     => other
+    case (_, "endturn")                    => Effect.EndTurn
+    case (Effect.EndTurn, "deal")          => Effect.Deal(StackRef(""), StackRef(""))
+    case (Effect.EndTurn, "shuffle")       => Effect.Shuffle(StackRef(""))
+    case (Effect.EndTurn, "manual")        => Effect.Manual("")
+    case (Effect.EndTurn, "movechosen")    => Effect.MoveChosen(StackRef(""))
+    case (d: Effect.Deal, "shuffle")       => Effect.Shuffle(d.from)
+    case (d: Effect.Deal, "movechosen")    => Effect.MoveChosen(d.to)
+    case (_: Effect.Deal, "manual")        => Effect.Manual("")
+    case (s: Effect.Shuffle, "deal")       => Effect.Deal(s.stack, StackRef(""))
+    case (s: Effect.Shuffle, "movechosen") => Effect.MoveChosen(s.stack)
+    case (_: Effect.Shuffle, "manual")     => Effect.Manual("")
+    case (m: Effect.MoveChosen, "deal")    => Effect.Deal(StackRef(""), m.to)
+    case (m: Effect.MoveChosen, "shuffle") => Effect.Shuffle(m.to)
+    case (_: Effect.MoveChosen, "manual")  => Effect.Manual("")
+    case (_: Effect.Manual, "deal")        => Effect.Deal(StackRef(""), StackRef(""))
+    case (_: Effect.Manual, "shuffle")     => Effect.Shuffle(StackRef(""))
+    case (_: Effect.Manual, "movechosen")  => Effect.MoveChosen(StackRef(""))
+    case (other, _)                        => other

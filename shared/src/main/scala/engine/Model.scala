@@ -92,14 +92,19 @@ object Facing:
   * player carries the effect out by hand, then marks it done, and the rest of the
   * cascade resumes against whatever table they left behind. `EndTurn` advances the
   * turn to the next player (see `GameState.currentPlayer`, `Engine.endTurn`), so
-  * "pass the turn" is just another effect a button or rule can run. Everything
-  * richer composes from these.
+  * "pass the turn" is just another effect a button or rule can run. `MoveChosen`
+  * lets the player pick the *card* to move — clicking the top of a pile, or a
+  * specific card in a row — and sends it to `to`; the cascade pauses for the pick
+  * exactly as `Manual` pauses (see `Progress.ChooseCard`, `Engine.applyCardChoice`),
+  * and `card` is the runtime-only slot the pick fills (always empty when authored).
+  * Everything richer composes from these.
   */
 enum Effect derives ReadWriter:
   case Deal(from: StackRef, to: StackRef, count: Int = 1)
   case Shuffle(stack: StackRef)
   case Manual(description: String)
   case EndTurn
+  case MoveChosen(to: StackRef, card: Option[CardId] = None)
 
 /** One atomic, animatable change in a cascade: relocate a single card, flip one,
   * reorder a stack, or pass the turn. `Engine.dropSteps` emits these in order so the
@@ -145,6 +150,13 @@ enum Progress:
     * pause is a boundary, not a step to animate.
     */
   case Choose(state: GameState, card: CardId, slot: String, rest: List[Pending])
+  /** A cascade halted on a `MoveChosen` whose card the player has yet to pick. `card`
+    * anchors the prompt (the triggering card, or `noCard` for a button); `rest` is
+    * the *whole* remaining queue, its head's `MoveChosen.card` still empty. The shell
+    * fills it with `Engine.applyCardChoice` from whichever card the player clicks and
+    * steps on. Held outside `Step`, like the other pauses, because it is a boundary.
+    */
+  case ChooseCard(state: GameState, card: CardId, rest: List[Pending])
 
 /** Something that just happened on the table — the signal the effect system
   * reacts to. The only kind so far: a card came to rest on a stack. A rule whose
