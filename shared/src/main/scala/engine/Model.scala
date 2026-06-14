@@ -124,6 +124,9 @@ enum Effect derives ReadWriter:
   */
 enum Step:
   case Move(card: CardId, to: StackId)
+  // Like `Move`, but slots the card in at storage index `at` (clamped) rather than
+  // on top — the animatable form of a hand-arranged row drop (see `Engine.moveAt`).
+  case Insert(card: CardId, to: StackId, at: Int)
   case Flip(card: CardId)
   case Shuffle(stack: StackId, seed: Long)
   case EndTurn
