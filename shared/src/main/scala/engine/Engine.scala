@@ -13,7 +13,7 @@ object Engine:
     * `shuffled` is ordered by a per-stack seeded RNG, so the same `seed`
     * reproduces the same table. Unflagged stacks keep their authored order.
     */
-  def setup(catalog: CardCatalog, rulebook: Rulebook, gameSetup: GameSetup, seed: Long = 0L): GameState =
+  def setup(catalog: CardCatalog, rulebook: Rulebook, gameSetup: GameSetup, seed: Long = 0L, players: Int = 1): GameState =
     val defs = catalog.cards.map(c => c.id -> c).toMap
     val stacks = gameSetup.stacks.map: spec =>
       val instances = spec.contents
@@ -37,15 +37,16 @@ object Engine:
         owner = spec.owner,
         role = spec.role,
       )
-    GameState(defs, rulebook.rules, stacks)
+    GameState(defs, rulebook.rules, stacks, players = players)
 
   /** Pass the turn to the next player, wrapping back to the first after the last.
-    * `players` is the game's player count; one or fewer players leaves the turn
-    * on player 0, so a solitaire game has nothing to advance.
+    * Reads the game's player count from the table (`GameState.players`); one or
+    * fewer players leaves the turn on player 0, so a solitaire game has nothing to
+    * advance. Invoked headlessly by the `EndTurn` effect (see `step`).
     */
-  def endTurn(state: GameState, players: Int): GameState =
-    if players <= 1 then state.copy(currentPlayer = 0)
-    else state.copy(currentPlayer = (state.currentPlayer + 1) % players)
+  def endTurn(state: GameState): GameState =
+    if state.players <= 1 then state.copy(currentPlayer = 0)
+    else state.copy(currentPlayer = (state.currentPlayer + 1) % state.players)
 
   /** Reorder one stack using a seeded RNG. Same seed ⇒ same order. Marks the
     * stack `shuffled` until something touches its cards again.
@@ -130,6 +131,10 @@ object Engine:
         effect match
           case Effect.Manual(description) =>
             Right(Progress.Await(state, card, description, rest))
+          case Effect.EndTurn =>
+            // Passing the turn always succeeds; it carries a single bookkeeping step
+            // so the animated shell applies the change to its live table too.
+            Right(Progress.Ran(endTurn(state), List(Step.EndTurn), rest))
           case Effect.Shuffle(stackRef) =>
             // An unresolvable role (the current player owns no such stack) stops a
             // lenient deal-side effect quietly; in a rule it aborts the cascade.
