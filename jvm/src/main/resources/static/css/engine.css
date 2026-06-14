@@ -437,6 +437,45 @@
   border-color: var(--accent);
 }
 
+/* A cascade-failure banner pinned to the top of the board (fixed in the viewport, not
+   the panned world). A danger-toned frame carries the message; the ✕ dismisses it. */
+.cascade-error {
+  position: absolute;
+  z-index: 300;
+  top: 0.75rem;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 80%;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.9rem;
+  background: var(--surface);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(5, 5, 10, 0.6);
+}
+
+.cascade-error-text {
+  color: var(--danger);
+  line-height: 1.4;
+}
+
+.cascade-error-close {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0;
+}
+
+.cascade-error-close:hover {
+  color: var(--text);
+}
+
 /* While a choice is pending every stack is pickable: an accent ring and a pointer
    cursor invite the click that fills the choice. The ring brightens on hover so the
    stack under the cursor reads as the one about to be picked. */

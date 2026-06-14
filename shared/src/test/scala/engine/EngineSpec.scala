@@ -196,6 +196,35 @@ class EngineSpec extends AnyWordSpec with Matchers:
     ),
   )
 
+  // A table for host-relative references (`StackRef.Same`): each player owns a "bin"
+  // (the host a card lands on) and a "deck". One rule fires when a Build lands on
+  // player 1's bin and deals a token into the *same owner's* deck — so a `Same("deck")`
+  // ref resolves against the owner of the landing stack, not the current player.
+  private val sameCatalog = CardCatalog(
+    List(
+      CardDef(CardDefId("build"), "#3b82f6", "Build", "x"),
+      CardDef(CardDefId("token"), "#999999", "Token", "y"),
+    ),
+  )
+  private val sameRulebook = Rulebook(
+    List(
+      Rule(
+        Trigger.Moved(CardDefId("build"), StackRef("bin_b")),
+        effects = List(Effect.Deal(StackRef("src"), StackRef.Same("deck"), 1)),
+      ),
+    ),
+  )
+  private val sameSetup = GameSetup(
+    List(
+      StackSpec(StackId("hand"), "Hand", Position(0, 0), Facing.Up, List(SpawnSpec(CardDefId("build"), 1))),
+      StackSpec(StackId("src"), "Src", Position(0, 0), Facing.Up, List(SpawnSpec(CardDefId("token"), 5))),
+      StackSpec(StackId("bin_a"), "Bin A", Position(0, 0), Facing.Up, Nil, persistent = true, owner = Some(0), role = "bin"),
+      StackSpec(StackId("bin_b"), "Bin B", Position(0, 0), Facing.Up, Nil, persistent = true, owner = Some(1), role = "bin"),
+      StackSpec(StackId("deck_a"), "Deck A", Position(0, 0), Facing.Down, Nil, persistent = true, owner = Some(0), role = "deck"),
+      StackSpec(StackId("deck_b"), "Deck B", Position(0, 0), Facing.Down, Nil, persistent = true, owner = Some(1), role = "deck"),
+    ),
+  )
+
   private def stackOf(state: GameState, id: StackId): Stack =
     state.stacks.find(_.id == id).get
 
@@ -256,11 +285,11 @@ class EngineSpec extends AnyWordSpec with Matchers:
 
     "pass the turn when run from a button" in:
       val state = Engine.setup(catalog, rulebook, setup, players = 3)
-      runAll(Engine.buttonCascade(state, List(Effect.EndTurn)).toOption.get).currentPlayer shouldBe 1
+      runAll(Engine.buttonCascade(state, List(Effect.EndTurn), None).toOption.get).currentPlayer shouldBe 1
 
     "wrap to the first player after the last" in:
       val state = Engine.setup(catalog, rulebook, setup, players = 3).copy(currentPlayer = 2)
-      runAll(Engine.buttonCascade(state, List(Effect.EndTurn)).toOption.get).currentPlayer shouldBe 0
+      runAll(Engine.buttonCascade(state, List(Effect.EndTurn), None).toOption.get).currentPlayer shouldBe 0
 
   "Engine.shuffle" should:
 
@@ -544,12 +573,12 @@ class EngineSpec extends AnyWordSpec with Matchers:
 
     "pause on the unfilled target, naming the slot to choose" in:
       val Progress.Choose(_, _, slot, _) =
-        Engine.buttonCascade(Engine.setup(catalog, rulebook, setup), chooseFrom).toOption.get: @unchecked
+        Engine.buttonCascade(Engine.setup(catalog, rulebook, setup), chooseFrom, None).toOption.get: @unchecked
       slot shouldBe "from"
 
     "deal from the stack the player picks once the choice is filled" in:
       val Progress.Choose(paused, _, _, rest) =
-        Engine.buttonCascade(Engine.setup(catalog, rulebook, setup), chooseFrom).toOption.get: @unchecked
+        Engine.buttonCascade(Engine.setup(catalog, rulebook, setup), chooseFrom, None).toOption.get: @unchecked
       val Progress.Ran(done, _, _) = Engine.step(paused, Engine.applyChoice(rest, deck), 0L).toOption.get: @unchecked
       stackOf(done, discard).cards.head.id shouldBe CardId("deck#0")
 
@@ -561,12 +590,12 @@ class EngineSpec extends AnyWordSpec with Matchers:
 
     "pause for a card, anchored on the triggering card" in:
       val Progress.ChooseCard(_, anchor, _) =
-        Engine.buttonCascade(Engine.setup(catalog, rulebook, setup), moveChosen).toOption.get: @unchecked
+        Engine.buttonCascade(Engine.setup(catalog, rulebook, setup), moveChosen, None).toOption.get: @unchecked
       anchor shouldBe CardId("") // a button's own effect carries no triggering card
 
     "move exactly the card the player picks once the choice is filled" in:
       val Progress.ChooseCard(paused, _, rest) =
-        Engine.buttonCascade(Engine.setup(catalog, rulebook, setup), moveChosen).toOption.get: @unchecked
+        Engine.buttonCascade(Engine.setup(catalog, rulebook, setup), moveChosen, None).toOption.get: @unchecked
       val resumed = Engine.step(paused, Engine.applyCardChoice(rest, CardId("deck#5")), 0L).toOption.get
       val Progress.Ran(done, _, _) = resumed: @unchecked
       stackOf(done, discard).cards.head.id shouldBe CardId("deck#5")
@@ -602,6 +631,14 @@ class EngineSpec extends AnyWordSpec with Matchers:
       val played = Engine.drop(state, CardId("hand#0"), StackId("gate2")).toOption.get
       stackOf(played, StackId("sink")).cards shouldBe empty
 
+  "A host-relative rule effect (StackRef.Same)" should:
+
+    "resolve against the owner of the stack the card landed on" in:
+      val state  = Engine.setup(sameCatalog, sameRulebook, sameSetup)
+      val played = Engine.drop(state, CardId("hand#0"), StackId("bin_b")).toOption.get
+      stackOf(played, StackId("deck_b")).cards.size shouldBe 1 // bin_b's owner is player 1
+      stackOf(played, StackId("deck_a")).cards shouldBe empty
+
   "A button ruleset" should:
 
     // Drive a button cascade to its settled table, auto-resuming any manual pause —
@@ -616,21 +653,38 @@ class EngineSpec extends AnyWordSpec with Matchers:
     "run a list of effects in order, resolving roles against the current player" in:
       val state   = Engine.setup(ownerCatalog, Rulebook(Nil), ownerSetup)
       val effects = List(Effect.Deal(StackRef("debt"), StackRef.Owned("deck"), 2), Effect.Shuffle(StackRef.Owned("deck")))
-      val done    = runAll(Engine.buttonCascade(state, effects).toOption.get)
+      val done    = runAll(Engine.buttonCascade(state, effects, None).toOption.get)
       stackOf(done, StackId("deck1")).cards.size shouldBe 2
       stackOf(done, StackId("deck1")).shuffled shouldBe true
       stackOf(done, StackId("deck2")).cards shouldBe empty
 
     "retarget the same button to the next player after the turn passes" in:
       val state = Engine.endTurn(Engine.setup(ownerCatalog, Rulebook(Nil), ownerSetup, players = 2))
-      val done  = runAll(Engine.buttonCascade(state, List(Effect.Deal(StackRef("debt"), StackRef.Owned("deck"), 2))).toOption.get)
+      val done  = runAll(Engine.buttonCascade(state, List(Effect.Deal(StackRef("debt"), StackRef.Owned("deck"), 2)), None).toOption.get)
       stackOf(done, StackId("deck2")).cards.size shouldBe 2
       stackOf(done, StackId("deck1")).cards shouldBe empty
 
     "deal leniently, taking only what the source holds when asked for more" in:
       val state = Engine.setup(ownerCatalog, Rulebook(Nil), ownerSetup)
-      val done  = runAll(Engine.buttonCascade(state, List(Effect.Deal(StackRef("debt"), StackRef.Owned("deck"), 999))).toOption.get)
+      val done  = runAll(Engine.buttonCascade(state, List(Effect.Deal(StackRef("debt"), StackRef.Owned("deck"), 999)), None).toOption.get)
       stackOf(done, StackId("deck1")).cards.size shouldBe 10
+
+    "resolve a Same reference against the button's host owner, not the current player" in:
+      val state   = Engine.setup(ownerCatalog, Rulebook(Nil), ownerSetup) // current player 0
+      val effects = List(Effect.Deal(StackRef("debt"), StackRef.Same("deck"), 2))
+      val done    = runAll(Engine.buttonCascade(state, effects, hostOwner = Some(1)).toOption.get)
+      stackOf(done, StackId("deck2")).cards.size shouldBe 2 // player 1's deck, the host owner
+      stackOf(done, StackId("deck1")).cards shouldBe empty
+
+    "abort, not fail silently, when the host owner owns no stack of the Same role" in:
+      val state = Engine.setup(ownerCatalog, Rulebook(Nil), ownerSetup)
+      Engine.buttonCascade(state, List(Effect.Deal(StackRef("debt"), StackRef.Same("deck"), 2)), hostOwner = Some(99)) shouldBe
+        Left(EngineError.UnresolvedSame("deck", Some(99)))
+
+    "abort, not fail silently, when the current player owns no stack of an Owned role" in:
+      val state = Engine.setup(ownerCatalog, Rulebook(Nil), ownerSetup).copy(currentPlayer = 5)
+      Engine.buttonCascade(state, List(Effect.Deal(StackRef("debt"), StackRef.Owned("deck"), 2)), None) shouldBe
+        Left(EngineError.UnresolvedRole("deck", 5))
 
   "JSON codecs" should:
 
@@ -638,12 +692,16 @@ class EngineSpec extends AnyWordSpec with Matchers:
       read[CardCatalog](write(catalog)) shouldBe catalog
 
     "round-trip a button's effects unchanged" in:
-      val b = StackButton(StackId("hand"), "draw", List(Effect.Deal(StackRef.Owned("deck"), StackRef.Owned("hand"), 4), Effect.Shuffle(StackRef.Owned("deck"))))
+      val b = StackButton(ButtonHost.OnStack(StackId("hand")), "draw", List(Effect.Deal(StackRef.Owned("deck"), StackRef.Owned("hand"), 4), Effect.Shuffle(StackRef.Owned("deck"))))
       read[StackButton](write(b)) shouldBe b
 
-    "read a legacy button action as a one-effect list" in:
+    "round-trip a role-hosted button unchanged" in:
+      val b = StackButton(ButtonHost.OnRole("hand"), "draw", List(Effect.Deal(StackRef.Same("deck"), StackRef.Same("hand"), 4)))
+      read[StackButton](write(b)) shouldBe b
+
+    "read a legacy button action as a one-effect list on a fixed stack" in:
       val legacy = """{"stackId":"hand1","label":"draw 4","action":{"$type":"DealFrom","stack":"deck1","count":4}}"""
-      read[StackButton](legacy) shouldBe StackButton(StackId("hand1"), "draw 4", List(Effect.Deal(StackRef("deck1"), StackRef("hand1"), 4)))
+      read[StackButton](legacy) shouldBe StackButton(ButtonHost.OnStack(StackId("hand1")), "draw 4", List(Effect.Deal(StackRef("deck1"), StackRef("hand1"), 4)))
 
     "round-trip a player-relative rulebook unchanged" in:
       read[Rulebook](write(ownerRulebook)) shouldBe ownerRulebook
@@ -653,6 +711,12 @@ class EngineSpec extends AnyWordSpec with Matchers:
 
     "round-trip an owned stack reference unchanged" in:
       read[StackRef](write(StackRef.Owned("deck"))) shouldBe StackRef.Owned("deck")
+
+    "round-trip a same-owner stack reference unchanged" in:
+      read[StackRef](write(StackRef.Same("deck"))) shouldBe StackRef.Same("deck")
+
+    "read a same-owner reference as distinct from an owned one" in:
+      read[StackRef](write(StackRef.Same("deck"))) should not be StackRef.Owned("deck")
 
     "round-trip a player-choice stack reference unchanged" in:
       read[StackRef](write(StackRef.Choice)) shouldBe StackRef.Choice

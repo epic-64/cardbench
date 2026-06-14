@@ -111,11 +111,16 @@ object Engine:
   /** Begin a stack button's ruleset: run its authored `effects` in order — each
     * lenient (a deal that can't draw just stops rather than aborting), each
     * cascading through the rules and pausing on a `Manual` exactly like a rule's.
-    * References resolve against the current player, so one button serves whoever's
-    * turn it is. Returns the first advance; the shell drives the rest with `step`.
+    * `Owned` references resolve against the current player, so one button serves
+    * whoever's turn it is; `Same` references resolve against `hostOwner` — the owner
+    * of the stack the button sits on — so one button authored on a player's own stacks
+    * works for every player (see `anchorRef`). A `Same` that no stack satisfies aborts
+    * the whole button before any effect runs, surfacing the misconfiguration rather
+    * than failing silently. Returns the first advance; the shell drives the rest with
+    * `step`.
     */
-  def buttonCascade(state: GameState, effects: List[Effect], seed: Long = 0L): Either[EngineError, Progress] =
-    step(state, effects.map(e => Pending(noCard, e, lenient = true)), seed)
+  def buttonCascade(state: GameState, effects: List[Effect], hostOwner: Option[Int], seed: Long = 0L): Either[EngineError, Progress] =
+    anchorAll(state, effects, hostOwner).flatMap(anchored => step(state, anchored.map(e => Pending(noCard, e, lenient = true)), seed))
 
   /** Resume a cascade paused on a `StackRef.Choice` (`Progress.Choose`): fill the
     * first unresolved choice in the queue's head effect with the `stack` the player
@@ -178,10 +183,9 @@ object Engine:
             // so the animated shell applies the change to its live table too.
             Right(Progress.Ran(endTurn(state), List(Step.EndTurn), rest))
           case Effect.Shuffle(stackRef) =>
-            // An unresolvable role (the current player owns no such stack) stops a
-            // lenient deal-side effect quietly; in a rule it aborts the cascade.
+            // A shuffle has no benign "ran dry" case — every failure is a stack that
+            // can't be resolved or found, a misconfiguration that always surfaces.
             resolveRef(state, stackRef) match
-              case Left(_) if lenient => step(state, rest, seed)
               case Left(err)          => Left(err)
               case Right(stack) =>
                 val stackSeed = seed ^ stack.value.hashCode.toLong
@@ -199,8 +203,8 @@ object Engine:
                 top  <- find(state, from).flatMap(_.cards.headOption.toRight(EmptyStack(from)))
               yield (from, to, top)
             resolved match
-              case Left(_) if lenient => step(state, rest, seed)
-              case Left(err)          => Left(err)
+              case Left(err) if lenient && lenientStop(err) => step(state, rest, seed)
+              case Left(err)                                => Left(err)
               case Right((from, to, top)) =>
                 resolveOne(state, top.id, to, seed).map: (moved, steps, triggered) =>
                   // Reactions resolve before the next dealt card: the move's own
@@ -218,8 +222,8 @@ object Engine:
                 _        <- findCard(state, chosenId).toRight(UnknownCard(chosenId))
               yield (chosenId, to)
             resolved match
-              case Left(_) if lenient => step(state, rest, seed)
-              case Left(err)          => Left(err)
+              case Left(err) if lenient && lenientStop(err) => step(state, rest, seed)
+              case Left(err)                                => Left(err)
               case Right((chosenId, to)) =>
                 resolveOne(state, chosenId, to, seed).map: (moved, steps, triggered) =>
                   Progress.Ran(moved, steps, triggered ++ rest)
@@ -312,15 +316,19 @@ object Engine:
     seed: Long,
   ): Either[EngineError, (GameState, List[Step], List[Pending])] =
     for
-      instance <- findCard(state, card).toRight(UnknownCard(card))
-      dest     <- find(state, to)
-      moved    <- move(state, card, to)
+      instance  <- findCard(state, card).toRight(UnknownCard(card))
+      dest      <- find(state, to)
+      moved     <- move(state, card, to)
+      event      = Event.Moved(card, instance.defId, to)
+      // A fired rule's `Same` references resolve against the owner of the stack the
+      // card just landed on — the rule's host — so they abort here if unsatisfiable
+      // rather than failing silently mid-cascade.
+      firing     = state.rules.filter(r => triggerFires(state, r.trigger, event)).flatMap(_.effects)
+      triggered <- anchorAll(state, firing, dest.owner)
     yield
-      val flips     = Option.when(instance.facing != dest.facing)(Step.Flip(card)).toList
-      val flipped   = flips.foldLeft(moved)((s, _) => flip(s, card).getOrElse(s))
-      val event     = Event.Moved(card, instance.defId, to)
-      val triggered = state.rules.filter(r => triggerFires(state, r.trigger, event)).flatMap(_.effects).map(Pending(card, _))
-      (flipped, Step.Move(card, to) :: flips, triggered)
+      val flips   = Option.when(instance.facing != dest.facing)(Step.Flip(card)).toList
+      val flipped = flips.foldLeft(moved)((s, _) => flip(s, card).getOrElse(s))
+      (flipped, Step.Move(card, to) :: flips, triggered.map(Pending(card, _)))
 
   /** Drive a cascade to its final table, auto-resuming every pause against the same
     * state — the headless reading of a `Manual`, which has no player to act on it.
@@ -357,9 +365,43 @@ object Engine:
         .find(s => s.owner.contains(state.currentPlayer) && s.role == role)
         .map(_.id)
         .toRight(UnresolvedRole(role, state.currentPlayer))
+    // A `Same` ref is rewritten to a `Fixed` id where it enters the queue (see
+    // `anchorRef`), so a `Same` only reaches here if it never resolved — surfaced
+    // as the same error rather than passing silently.
+    case StackRef.Same(role) => Left(UnresolvedSame(role, None))
     // `step` intercepts a `Choice` target before any resolve, so this is reached only
     // by a (nonsensical) `Choice` trigger — which then simply never matches.
     case StackRef.Choice => Left(UnresolvedRole("(choice)", state.currentPlayer))
+
+  /** Resolve any `Same` reference in `ref` to a concrete `Fixed` id against `hostOwner`
+    * — the stack with the named role owned by that host (the owner of the button's
+    * stack, or of the stack a triggering card landed on). Every other kind of ref is
+    * left untouched, to resolve as usual at step time. A `Same` the host owns no stack
+    * for fails with `UnresolvedSame`, so the misconfiguration surfaces instead of
+    * silently doing nothing.
+    */
+  private def anchorRef(state: GameState, ref: StackRef, hostOwner: Option[Int]): Either[EngineError, StackRef] = ref match
+    case StackRef.Same(role) =>
+      state.stacks
+        .find(s => s.owner == hostOwner && s.role == role)
+        .map(s => StackRef.Fixed(s.id))
+        .toRight(UnresolvedSame(role, hostOwner))
+    case other => Right(other)
+
+  // Resolve the `Same` references in one effect's stack targets against `hostOwner`
+  // (see `anchorRef`); `Manual` and `EndTurn` carry no target and pass through.
+  private def anchorEffect(state: GameState, effect: Effect, hostOwner: Option[Int]): Either[EngineError, Effect] = effect match
+    case Effect.Deal(from, to, count) =>
+      for f <- anchorRef(state, from, hostOwner); t <- anchorRef(state, to, hostOwner) yield Effect.Deal(f, t, count)
+    case Effect.Shuffle(stack)       => anchorRef(state, stack, hostOwner).map(Effect.Shuffle(_))
+    case Effect.MoveChosen(to, card) => anchorRef(state, to, hostOwner).map(Effect.MoveChosen(_, card))
+    case other                       => Right(other)
+
+  // Resolve the `Same` references across a whole effects list against `hostOwner`,
+  // short-circuiting on the first one no stack satisfies.
+  private def anchorAll(state: GameState, effects: List[Effect], hostOwner: Option[Int]): Either[EngineError, List[Effect]] =
+    effects.foldRight(Right(Nil): Either[EngineError, List[Effect]]): (e, acc) =>
+      for rest <- acc; anchored <- anchorEffect(state, e, hostOwner) yield anchored :: rest
 
   // The first target in an effect deferred to the player (`StackRef.Choice`), and a
   // label for what it is — drives the play-time pause (`Progress.Choose`). `None`
@@ -396,6 +438,18 @@ object Engine:
     (trigger, event) match
       case (Trigger.Moved(card, toRef), Event.Moved(_, defId, dest)) =>
         card == defId && resolveRef(state, toRef).toOption.contains(dest)
+
+  /** Whether a lenient effect (a stack button's own, see `buttonCascade`) should stop
+    * quietly on this error rather than abort. Only the benign "nothing left to act on"
+    * cases qualify — a deal whose source ran dry (so "draw 4" on a 3-card deck draws 3),
+    * or a chosen card that has since left the table. A reference that names no stack at
+    * all (`UnresolvedRole`, `UnresolvedSame`, `UnknownStack`) is a misconfiguration and
+    * surfaces even under lenience, so nothing fails silently.
+    */
+  private def lenientStop(err: EngineError): Boolean = err match
+    case EmptyStack(_)  => true
+    case UnknownCard(_) => true
+    case _              => false
 
   private def find(state: GameState, id: StackId): Either[EngineError, Stack] =
     state.stacks.find(_.id == id).toRight(UnknownStack(id))
