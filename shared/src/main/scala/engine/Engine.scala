@@ -79,6 +79,27 @@ object Engine:
       val placed = without.map(s => if s.id == to then s.copy(cards = instance :: s.cards, shuffled = false) else s)
       state.copy(stacks = dropEmpty(placed))
 
+  /** Move a specific card instance into another stack at storage index `at` (clamped
+    * to the destination's bounds *after* the card is removed) rather than on top — the
+    * primitive behind hand-arranging a row, where a drop lands between two cards. With
+    * `at = 0` this is exactly `move`; reordering within a stack is the case where `to`
+    * already holds the card. A source stack left with no cards ceases to exist.
+    */
+  def moveAt(state: GameState, card: CardId, to: StackId, at: Int): Either[EngineError, GameState] =
+    for
+      instance <- findCard(state, card).toRight(UnknownCard(card))
+      _        <- find(state, to)
+    yield
+      val without = state.stacks.map: s =>
+        if s.cards.exists(_.id == card) then s.copy(cards = s.cards.filterNot(_.id == card), shuffled = false)
+        else s
+      val placed = without.map: s =>
+        if s.id == to then
+          val (before, after) = s.cards.splitAt(at.max(0).min(s.cards.size))
+          s.copy(cards = before ::: instance :: after, shuffled = false)
+        else s
+      state.copy(stacks = dropEmpty(placed))
+
   /** Move a card onto a stack and let the table react: relocate it, then run the
     * effects of every rule the move triggers — and, since each effect is itself a
     * move, the rules *those* in turn trigger, cascading until nothing more fires.
@@ -96,8 +117,14 @@ object Engine:
     * Strict — a failure (e.g. an effect dealing from an empty stack) aborts the
     * whole drop before a single step escapes.
     */
-  def dropCascade(state: GameState, card: CardId, onto: StackId, seed: Long = 0L): Either[EngineError, Progress] =
-    resolveOne(state, card, onto, seed).map((moved, steps, triggered) => Progress.Ran(moved, steps, triggered))
+  def dropCascade(
+    state: GameState,
+    card: CardId,
+    onto: StackId,
+    seed: Long = 0L,
+    at: Option[Int] = None,
+  ): Either[EngineError, Progress] =
+    resolveOne(state, card, onto, seed, at).map((moved, steps, triggered) => Progress.Ran(moved, steps, triggered))
 
   /** Begin a stack button's deal: deal *up to* `count` cards from the top of `from`
     * onto `to`, each relocation cascading through the rules exactly like a drop and
@@ -249,6 +276,17 @@ object Engine:
       dest     <- find(state, to)
     yield Step.Move(card, to) :: Option.when(instance.facing != dest.facing)(Step.Flip(card)).toList
 
+  /** Like `moveSteps`, but slots the card in at storage index `at` rather than on top —
+    * the rules-free script the shell runs to hand-arrange a row (a reorder within the
+    * row, or a drop made during a manual pause). Flips to match the destination facing
+    * exactly as `moveSteps` does.
+    */
+  def insertSteps(state: GameState, card: CardId, to: StackId, at: Int): Either[EngineError, List[Step]] =
+    for
+      instance <- findCard(state, card).toRight(UnknownCard(card))
+      dest     <- find(state, to)
+    yield Step.Insert(card, to, at) :: Option.when(instance.facing != dest.facing)(Step.Flip(card)).toList
+
   /** Flip a single card between Up and Down; nothing else changes. */
   def flip(state: GameState, card: CardId): Either[EngineError, GameState] =
     findCard(state, card).toRight(UnknownCard(card)).map: _ =>
@@ -314,11 +352,14 @@ object Engine:
     card: CardId,
     to: StackId,
     seed: Long,
+    at: Option[Int] = None,
   ): Either[EngineError, (GameState, List[Step], List[Pending])] =
     for
       instance  <- findCard(state, card).toRight(UnknownCard(card))
       dest      <- find(state, to)
-      moved     <- move(state, card, to)
+      // `at` set means the player aimed the drop at a slot in a row, so the card lands
+      // there rather than on top; an unaimed drop and every cascade reaction prepend.
+      moved     <- at.fold(move(state, card, to))(i => moveAt(state, card, to, i))
       event      = Event.Moved(card, instance.defId, to)
       // A fired rule's `Same` references resolve against the owner of the stack the
       // card just landed on — the rule's host — so they abort here if unsatisfiable
@@ -326,9 +367,10 @@ object Engine:
       firing     = state.rules.filter(r => triggerFires(state, r.trigger, event)).flatMap(_.effects)
       triggered <- anchorAll(state, firing, dest.owner)
     yield
-      val flips   = Option.when(instance.facing != dest.facing)(Step.Flip(card)).toList
-      val flipped = flips.foldLeft(moved)((s, _) => flip(s, card).getOrElse(s))
-      (flipped, Step.Move(card, to) :: flips, triggered.map(Pending(card, _)))
+      val flips     = Option.when(instance.facing != dest.facing)(Step.Flip(card)).toList
+      val flipped   = flips.foldLeft(moved)((s, _) => flip(s, card).getOrElse(s))
+      val moveStep  = at.fold[Step](Step.Move(card, to))(i => Step.Insert(card, to, i))
+      (flipped, moveStep :: flips, triggered.map(Pending(card, _)))
 
   /** Drive a cascade to its final table, auto-resuming every pause against the same
     * state — the headless reading of a `Manual`, which has no player to act on it.

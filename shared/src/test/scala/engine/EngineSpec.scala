@@ -344,6 +344,44 @@ class EngineSpec extends AnyWordSpec with Matchers:
       moved.stacks.exists(_.id == StackId("a")) shouldBe false
       stackOf(moved, StackId("b")).cards.size shouldBe 2
 
+  "Engine.moveAt" should:
+
+    "slot the card in at the given index, keeping the rest in order" in:
+      val state = Engine.setup(catalog, rulebook, setup)
+      val moved = Engine.moveAt(state, CardId("deck#0"), deck, 2).toOption.get
+      stackOf(moved, deck).cards.map(_.id).take(4) shouldBe
+        List(CardId("deck#1"), CardId("deck#2"), CardId("deck#0"), CardId("deck#3"))
+
+    "land the card on top at index 0" in:
+      val moved = Engine.moveAt(Engine.setup(catalog, rulebook, setup), CardId("deck#5"), deck, 0).toOption.get
+      stackOf(moved, deck).cards.head.id shouldBe CardId("deck#5")
+
+    "land the card at the bottom at the size index" in:
+      val moved = Engine.moveAt(Engine.setup(catalog, rulebook, setup), CardId("deck#0"), deck, 11).toOption.get
+      stackOf(moved, deck).cards.last.id shouldBe CardId("deck#0")
+
+    "clamp an out-of-range index to the bottom" in:
+      val moved = Engine.moveAt(Engine.setup(catalog, rulebook, setup), CardId("deck#0"), deck, 999).toOption.get
+      stackOf(moved, deck).cards.last.id shouldBe CardId("deck#0")
+      stackOf(moved, deck).cards.size shouldBe 12
+
+    "reject an unknown card" in:
+      Engine.moveAt(Engine.setup(catalog, rulebook, setup), CardId("ghost"), deck, 0) shouldBe Left(
+        EngineError.UnknownCard(CardId("ghost")),
+      )
+
+  "Engine.insertSteps" should:
+
+    "script a positioned insert, flipping to meet the destination facing" in:
+      val state = Engine.setup(catalog, rulebook, setup)
+      Engine.insertSteps(state, CardId("deck#0"), discard, 0).toOption.get shouldBe
+        List(Step.Insert(CardId("deck#0"), discard, 0), Step.Flip(CardId("deck#0")))
+
+    "script just the insert when the facings already match" in:
+      val state = Engine.setup(catalog, rulebook, setup)
+      Engine.insertSteps(state, CardId("deck#0"), deck, 2).toOption.get shouldBe
+        List(Step.Insert(CardId("deck#0"), deck, 2))
+
   "Engine.flip" should:
 
     "turn a face-down card face-up and leave the rest alone" in:

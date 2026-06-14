@@ -422,6 +422,11 @@ object GameView:
           state.update(s => Engine.move(s, card, to).getOrElse(s))
           slide(card, from, moveDur)
           dom.window.setTimeout(() => done(), moveDur)
+        case Step.Insert(card, to, at) =>
+          val from = fromOverride.orElse(cardEl(card).map(_.getBoundingClientRect()))
+          state.update(s => Engine.moveAt(s, card, to, at).getOrElse(s))
+          slide(card, from, moveDur)
+          dom.window.setTimeout(() => done(), moveDur)
         case Step.Flip(card) =>
           state.update(s => Engine.flip(s, card).getOrElse(s))
           flipReveal(card, flipDur)
@@ -446,7 +451,7 @@ object GameView:
       // migration that flips every card) drags if each card animates at full speed,
       // so once the batch crosses the threshold we shrink every move and flip to
       // keep the cascade snappy.
-      val touched = steps.count(s => s.isInstanceOf[Step.Move] || s.isInstanceOf[Step.Flip])
+      val touched = steps.count(s => s.isInstanceOf[Step.Move] || s.isInstanceOf[Step.Insert] || s.isInstanceOf[Step.Flip])
       val bulk    = touched >= bulkMoveThreshold
       val moveDur = if bulk then bulkMoveAnimMs else moveAnimMs
       val flipDur = if bulk then bulkFlipAnimMs else flipAnimMs
@@ -553,9 +558,40 @@ object GameView:
         case None =>
           startCascade(Engine.dropCascade(state.now(), card, onto, _), from)
 
+    // Place a card into a row at a chosen slot with no rules fired — the rules-free
+    // arrange path (a reorder within the row, or any drop during a manual pause). The
+    // rule-firing counterpart is `dropCascade` with an `at` (see `onStackDrop`).
+    def insertAnimated(card: CardId, onto: StackId, at: Int, from: Option[dom.DOMRect]): Unit =
+      Engine.insertSteps(state.now(), card, onto, at).foreach: steps =>
+        animating = true
+        runSteps(steps, from, () => animating = false)
+
+    // The storage index a card should land at when dropped into a row at `cursorX`.
+    // The row's card elements run left→right in DOM order = storage *reversed*, so the
+    // rightmost non-dragged card whose center sits left of the cursor is the one the
+    // drop lands immediately right of visually — i.e. *at* that card's index in the
+    // post-removal list, which is exactly what `Engine.moveAt` splits on. A drop left
+    // of every card appends to the storage tail (the row's far-left slot).
+    def rowInsertIndex(rowEl: dom.Element, stack: Stack, dragged: CardId, cursorX: Double): Int =
+      val rest  = stack.cards.filterNot(_.id == dragged)
+      val cards = rowEl.querySelectorAll("[data-card-id]")
+      val leftId = (0 until cards.length).iterator
+        .map(i => cards(i).asInstanceOf[dom.html.Element])
+        .filter(el => el.getAttribute("data-card-id") != dragged.value)
+        .filter: el =>
+          val r = el.getBoundingClientRect()
+          r.left + r.width / 2 < cursorX
+        .map(el => el.getAttribute("data-card-id"))
+        .toSeq
+        .lastOption
+      leftId.map(id => rest.indexWhere(_.id == CardId(id))).filter(_ >= 0).getOrElse(rest.size)
+
     // A card dropped onto a stack relocates onto it (and the rules react). Dropped
     // onto its own single-card stack it just repositions instead — so a lone card
     // can be nudged anywhere, not only by dragging it clear of the stack's bounds.
+    // Dropped onto a row it lands at the slot under the cursor: a reorder within the
+    // row (or any drop during a manual pause) just rearranges with no rules, while a
+    // card brought in from elsewhere still fires its cascade but settles at that slot.
     def onStackDrop(e: dom.DragEvent, stack: Stack): Unit =
       // Grab the floating ghost's screen position before tearing it down, so the
       // dropped card can glide from where it was released rather than its origin.
@@ -571,7 +607,16 @@ object GameView:
           dragCard = None
           if selfLone then
             state.update(s => Engine.moveStack(s, stack.id, Position(p.x - c.offX, p.y - c.offY)).getOrElse(s))
-          else dropAnimated(c.id, stack.id, released)
+          else
+            stack.layout match
+              case Layout.Row =>
+                val rowEl = Option(e.currentTarget.asInstanceOf[dom.Element].querySelector(".zone-row"))
+                val at    = rowEl.map(rowInsertIndex(_, stack, c.id, e.clientX)).getOrElse(0)
+                if stack.cards.exists(_.id == c.id) || manualPause.now().isDefined then
+                  insertAnimated(c.id, stack.id, at, released)
+                else startCascade(Engine.dropCascade(state.now(), c.id, stack.id, _, Some(at)), released)
+              case Layout.Pile =>
+                dropAnimated(c.id, stack.id, released)
 
     // Pointer-driven, so movement is pixel-exact and starts immediately. We move
     // the live element directly during the drag (no re-render churn that would
