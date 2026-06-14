@@ -104,7 +104,10 @@ object GameView:
         .combineWith(zoom.signal)
         .distinct
         .map((p, z) => s"transform:translate(${p.x}px,${p.y}px) scale($z)"),
-      children <-- state.signal.map(_.stacks).distinct.map(_.map(stackView)),
+      // Re-render on the stacks *or* the current player changing — the latter so a
+      // card showing a %variable% (e.g. %current_player_index%) updates as the turn
+      // passes, even when no card has moved.
+      children <-- state.signal.map(s => (s.stacks, s.currentPlayer)).distinct.map((stacks, _) => stacks.map(stackView)),
       // The manual-effect prompt lives inside the world, anchored beside its card in
       // board coordinates, so it pans and zooms with the camera like any stack.
       child <-- manualPause.signal.map {
@@ -535,7 +538,9 @@ object GameView:
             badge,
           )
         case Facing.Up =>
-          val d = catalog.get(card.defId)
+          // Resolve %variable% tokens in the card's text against the live table, so
+          // a card can show e.g. the current player; the board re-renders as it changes.
+          val d = catalog.get(card.defId).map(cd => Variables.resolve(cd, state.now()))
           div(
             cls       := Seq("card", "card-front") ++ depth,
             draggable := true,
@@ -581,7 +586,7 @@ object GameView:
 
     // One card in the inspect grid: its front, always readable, click to pull.
     def inspectCardView(stack: Stack, card: CardInstance): Element =
-      val d = catalog.get(card.defId)
+      val d = catalog.get(card.defId).map(cd => Variables.resolve(cd, state.now()))
       div(
         cls       := Seq("card", "card-front", "inspect-card"),
         styleAttr := CardFace.accent(d.map(_.color).getOrElse("transparent")),

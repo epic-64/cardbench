@@ -590,13 +590,32 @@ object EditorView:
         ),
       )
 
+    // ── variables ──────────────────────────────────────────────────────────────
+    // A reference list of the variables a card's text can interpolate with %name%
+    // tokens (see engine.Variables). Built-ins only for now, so the panel is a
+    // read-only catalogue an author consults while writing card text.
+    val variablesSection =
+      div(
+        cls := "editor-section",
+        div(cls := "editor-section-head", h2("Variables")),
+        p(cls := "editor-hint", "Reference a variable in any card's title, description, or corner with %name% — its current value is shown on the card during play."),
+        div(
+          cls := "editor-rows",
+          Variables.builtins.map: v =>
+            div(
+              cls := "editor-variable",
+              code(cls := "editor-variable-name", s"%${v.name}%"),
+              span(cls := "editor-variable-desc", v.description),
+            ),
+        ),
+      )
+
     def finalised(): GameDefinition =
       val d = draft.now()
       if d.name.trim.isEmpty then d.copy(name = "Untitled") else d
 
-    // Which of the three editing tabs is showing. All three panels stay mounted
-    // (so their field state and scroll survive a tab switch); only the active one
-    // is displayed.
+    // Which editing tab is showing. Every panel stays mounted (so its field state
+    // and scroll survive a tab switch); only the active one is displayed.
     val activeTab = Var("cards")
 
     def tabButton(id: String, label: String): Element =
@@ -648,12 +667,14 @@ object EditorView:
           tabButton("stacks", "Stacks"),
           tabButton("buttons", "Buttons"),
           tabButton("rules", "Rules"),
+          tabButton("variables", "Variables"),
         ),
         tabPanel("cards", cardsSection),
         tabPanel("design", designSection),
         tabPanel("stacks", stacksSection),
         tabPanel("buttons", buttonsSection),
         tabPanel("rules", rulesSection),
+        tabPanel("variables", variablesSection),
       ),
     )
 
