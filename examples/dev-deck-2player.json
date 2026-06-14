@@ -19,7 +19,7 @@
       { "id": "stakeholder-pivot", "color": "#db2777", "title": "Stakeholder Pivot", "description": "Discard the leftmost feature of the customer project, and replace it with the top card of the feature deck." },
       { "id": "burnout", "color": "#ea580c", "title": "Burnout", "description": "If you have two or more tech debt cards, discard one non-debt card from your hand." },
       { "id": "ci-cd", "color": "#0891b2", "title": "CI/CD", "description": "If you have a test in your build:\ndraw a card.\ngain one extra action this turn." },
-      { "id": "rule-taking-a-turn", "color": "#888888", "title": "Taking a Turn", "description": "1. Draw 4 cards from your deck.\n2. Reveal an event and execute it.\n3. Play one card from your hand.\n4. Discard your hand.\n5. End turn." },
+      { "id": "rule-taking-a-turn", "color": "#888888", "title": "Taking a Turn", "description": "Current player: %current_player_index%\n\n1. Draw 4 cards from your deck.\n2. Reveal an event and execute it.\n3. Play one card from your hand.\n4. Discard your hand.\n5. End turn." },
       { "id": "rule-preparation", "color": "#888888", "title": "Preparation", "description": "1. Deal 3 Feature cards into the global Project Zone, face up." },
       { "id": "rule-winning", "color": "#888888", "title": "Winning the Game", "description": "The first to collect 8 Feature cards wins. When you have 3 Feature cards in your Build Zone, that match the colors of the Project, you can deliver the project. Move the 3 Feature cards into your Points Zone" }
     ]

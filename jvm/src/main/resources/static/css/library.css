@@ -617,6 +617,37 @@
   gap: var(--gap-sm);
 }
 
+/* Variables reference list: a token chip beside its description, one per row. */
+.editor-hint {
+  margin: 0 0 var(--gap-sm);
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.editor-variable {
+  display: flex;
+  align-items: baseline;
+  gap: var(--gap-sm);
+  background: var(--field-bg);
+  border: var(--border);
+  border-radius: var(--card-radius);
+  padding: var(--gap-sm);
+}
+
+.editor-variable-name {
+  color: var(--accent);
+  background: var(--accent-soft);
+  padding: 0.15rem 0.4rem;
+  border-radius: var(--card-radius);
+  font-family: monospace;
+  white-space: nowrap;
+}
+
+.editor-variable-desc {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
 /* "When" / "Then" pills that label and colour-code the two halves of a rule. */
 .rule-badge {
   align-self: flex-end;
