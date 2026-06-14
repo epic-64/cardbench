@@ -36,6 +36,7 @@ object Engine:
         layout = spec.layout,
         owner = spec.owner,
         role = spec.role,
+        color = spec.color,
       )
     GameState(defs, rulebook.rules, stacks, players = players)
 

@@ -57,6 +57,18 @@ object EditorFields:
       ),
     )
 
+  /** A checkbox laid out inline (box then label), matching `.field-check`. */
+  def checkboxField(name: String, initial: Boolean, onChanged: Boolean => Unit): Element =
+    label(
+      cls := "field field-check",
+      input(
+        typ := "checkbox",
+        defaultChecked := initial,
+        onInput.mapToChecked --> (v => onChanged(v)),
+      ),
+      span(cls := "field-label", name),
+    )
+
   /** A drop-down over a fixed set of `(label, value)` choices. The current value's
     * option is pre-selected; picking another reports its value.
     */
