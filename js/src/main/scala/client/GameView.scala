@@ -188,7 +188,7 @@ object GameView:
         dragCard.foreach: c =>
           looseSeq += 1
           val newId = StackId(s"loose#$looseSeq")
-          val to    = Position(clamp(p.x - c.offX), clamp(p.y - c.offY))
+          val to    = Position(p.x - c.offX, p.y - c.offY)
           state.update(s => Engine.extractCard(s, c.id, newId, to).getOrElse(s))
         dragCard = None
 
@@ -441,7 +441,7 @@ object GameView:
           val p        = boardPoint(e.clientX, e.clientY)
           dragCard = None
           if selfLone then
-            state.update(s => Engine.moveStack(s, stack.id, Position(clamp(p.x - c.offX), clamp(p.y - c.offY))).getOrElse(s))
+            state.update(s => Engine.moveStack(s, stack.id, Position(p.x - c.offX, p.y - c.offY)).getOrElse(s))
           else dropAnimated(c.id, stack.id, released)
 
     // Pointer-driven, so movement is pixel-exact and starts immediately. We move
@@ -466,15 +466,15 @@ object GameView:
         onPointerMove --> { e =>
           dragStack.foreach: d =>
             val p = boardPoint(e.clientX, e.clientY)
-            d.el.style.left = s"${clamp(p.x - d.grabX)}px"
-            d.el.style.top = s"${clamp(p.y - d.grabY)}px"
+            d.el.style.left = s"${p.x - d.grabX}px"
+            d.el.style.top = s"${p.y - d.grabY}px"
         },
         onPointerUp --> { e =>
           dragStack.foreach: d =>
             val p = boardPoint(e.clientX, e.clientY)
             e.currentTarget.asInstanceOf[js.Dynamic].releasePointerCapture(e.pointerId)
             dragStack = None
-            state.update(s => Engine.moveStack(s, stack.id, Position(clamp(p.x - d.grabX), clamp(p.y - d.grabY))).getOrElse(s))
+            state.update(s => Engine.moveStack(s, stack.id, Position(p.x - d.grabX, p.y - d.grabY)).getOrElse(s))
         },
         onPointerCancel --> (_ => dragStack = None),
       )
@@ -570,7 +570,7 @@ object GameView:
       if !animating then
         looseSeq += 1
         val step  = (looseSeq % 6) * cascadeStep
-        val to    = Position(clamp(stack.position.x + cardWidth + cascadeStep + step), clamp(stack.position.y + step))
+        val to    = Position(stack.position.x + cardWidth + cascadeStep + step, stack.position.y + step)
         val newId = StackId(s"loose#$looseSeq")
         state.update(s => Engine.extractCard(s, card.id, newId, to).getOrElse(s))
 
@@ -710,8 +710,6 @@ object GameView:
             case Some(stack) if stack.cards.nonEmpty => inspectOverlay(stack)
             case _                                   => emptyNode,
     )
-
-  private def clamp(n: Int): Int = math.max(0, n)
 
   private val cascadeStep = 26
 
