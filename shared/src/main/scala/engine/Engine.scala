@@ -117,6 +117,16 @@ object Engine:
   def buttonCascade(state: GameState, effects: List[Effect], seed: Long = 0L): Either[EngineError, Progress] =
     step(state, effects.map(e => Pending(noCard, e, lenient = true)), seed)
 
+  /** Resume a cascade paused on a `StackRef.Choice` (`Progress.Choose`): fill the
+    * first unresolved choice in the queue's head effect with the `stack` the player
+    * picked, handing back a queue ready to `step`. The shell pairs this with the
+    * same `rest` the pause carried. A queue whose head holds no choice (or an empty
+    * one) is returned unchanged.
+    */
+  def applyChoice(pending: List[Pending], stack: StackId): List[Pending] = pending match
+    case Pending(card, effect, lenient) :: rest => Pending(card, fillChoice(effect, stack), lenient) :: rest
+    case Nil                                    => Nil
+
   /** Advance a cascade by a single effect: run the head of the queue against the
     * *given* table and report a `Progress`. The one place a cascade can be steered —
     * because the caller chooses the table to advance from, a paused cascade resumes
@@ -128,6 +138,23 @@ object Engine:
     pending match
       case Nil => Right(Progress.Done(state))
       case Pending(card, effect, lenient) :: rest =>
+        firstChoice(effect) match
+          // A `Choice` target can't resolve headlessly: pause and let the player name
+          // the stack. The whole queue (head included, choice still unfilled) rides
+          // along so `applyChoice` can fill it and the shell can step on.
+          case Some(slot) => Right(Progress.Choose(state, card, slot, pending))
+          case None       => stepResolved(state, card, effect, lenient, rest, seed)
+
+  // The body of a single step once any `Choice` target has been ruled out — the
+  // effect is ready to resolve against the table as authored.
+  private def stepResolved(
+    state: GameState,
+    card: CardId,
+    effect: Effect,
+    lenient: Boolean,
+    rest: List[Pending],
+    seed: Long,
+  ): Either[EngineError, Progress] =
         effect match
           case Effect.Manual(description) =>
             Right(Progress.Await(state, card, description, rest))
@@ -270,6 +297,9 @@ object Engine:
     case Progress.Done(s)              => Right(s)
     case Progress.Ran(s, _, rest)      => step(s, rest, seed).flatMap(runToEnd(_, seed))
     case Progress.Await(s, _, _, rest) => step(s, rest, seed).flatMap(runToEnd(_, seed))
+    // No player to pick the stack headlessly, so the choosing effect is dropped and
+    // the cascade runs on — the analogue of a `Manual` resolving to a no-op.
+    case Progress.Choose(s, _, _, rest) => step(s, rest.drop(1), seed).flatMap(runToEnd(_, seed))
 
   /** Flatten a cascade to its full step script, auto-resuming pauses and
     * concatenating each advance's steps — the headless step list, manual prompts
@@ -278,6 +308,8 @@ object Engine:
     case Progress.Done(_)              => Right(Nil)
     case Progress.Ran(s, steps, rest)  => step(s, rest, seed).flatMap(collectSteps(_, seed)).map(steps ++ _)
     case Progress.Await(s, _, _, rest) => step(s, rest, seed).flatMap(collectSteps(_, seed))
+    // Headless, the choosing effect is elided, exactly as a manual prompt is.
+    case Progress.Choose(s, _, _, rest) => step(s, rest.drop(1), seed).flatMap(collectSteps(_, seed))
 
   /** Turn an authored reference into a concrete stack id. A `Fixed` ref is its id
     * verbatim (its existence is checked where it's used, as before). An `Owned` ref
@@ -291,6 +323,26 @@ object Engine:
         .find(s => s.owner.contains(state.currentPlayer) && s.role == role)
         .map(_.id)
         .toRight(UnresolvedRole(role, state.currentPlayer))
+    // `step` intercepts a `Choice` target before any resolve, so this is reached only
+    // by a (nonsensical) `Choice` trigger — which then simply never matches.
+    case StackRef.Choice => Left(UnresolvedRole("(choice)", state.currentPlayer))
+
+  // The first target in an effect deferred to the player (`StackRef.Choice`), and a
+  // label for what it is — drives the play-time pause (`Progress.Choose`). `None`
+  // when every target is already concrete or player-relative.
+  private def firstChoice(effect: Effect): Option[String] = effect match
+    case Effect.Deal(StackRef.Choice, _, _) => Some("from")
+    case Effect.Deal(_, StackRef.Choice, _) => Some("to")
+    case Effect.Shuffle(StackRef.Choice)    => Some("stack")
+    case _                                  => None
+
+  // Replace the first `StackRef.Choice` target in an effect with the picked stack —
+  // the resolve step `applyChoice` performs once the player has chosen.
+  private def fillChoice(effect: Effect, stack: StackId): Effect = effect match
+    case d @ Effect.Deal(StackRef.Choice, _, _) => d.copy(from = StackRef.Fixed(stack))
+    case d @ Effect.Deal(_, StackRef.Choice, _) => d.copy(to = StackRef.Fixed(stack))
+    case Effect.Shuffle(StackRef.Choice)        => Effect.Shuffle(StackRef.Fixed(stack))
+    case other                                  => other
 
   /** Whether `trigger` fires on `event` against this table. The trigger's `to`
     * reference is resolved here (an `Owned` ref against the current player), so a

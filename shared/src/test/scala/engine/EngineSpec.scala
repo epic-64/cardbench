@@ -248,9 +248,10 @@ class EngineSpec extends AnyWordSpec with Matchers:
 
     // Drive a cascade to its settled table — EndTurn produces one bookkeeping step.
     def runAll(progress: Progress): GameState = progress match
-      case Progress.Done(s)              => s
-      case Progress.Ran(s, _, rest)      => runAll(Engine.step(s, rest, 0L).toOption.get)
-      case Progress.Await(s, _, _, rest) => runAll(Engine.step(s, rest, 0L).toOption.get)
+      case Progress.Done(s)               => s
+      case Progress.Ran(s, _, rest)       => runAll(Engine.step(s, rest, 0L).toOption.get)
+      case Progress.Await(s, _, _, rest)  => runAll(Engine.step(s, rest, 0L).toOption.get)
+      case Progress.Choose(s, _, _, rest) => runAll(Engine.step(s, rest.drop(1), 0L).toOption.get)
 
     "pass the turn when run from a button" in:
       val state = Engine.setup(catalog, rulebook, setup, players = 3)
@@ -533,6 +534,24 @@ class EngineSpec extends AnyWordSpec with Matchers:
       stackOf(played, StackId("build-zone")).cards.size shouldBe 1
       stackOf(played, StackId("features")).cards.size shouldBe 2
 
+  "A player-choice effect" should:
+
+    // A button whose deal leaves its source for the player to pick: the cascade
+    // pauses on the unfilled `from`, and filling it with the deck deals the deck's
+    // top onto the discard.
+    val chooseFrom = List(Effect.Deal(StackRef.Choice, StackRef("discard")))
+
+    "pause on the unfilled target, naming the slot to choose" in:
+      val Progress.Choose(_, _, slot, _) =
+        Engine.buttonCascade(Engine.setup(catalog, rulebook, setup), chooseFrom).toOption.get: @unchecked
+      slot shouldBe "from"
+
+    "deal from the stack the player picks once the choice is filled" in:
+      val Progress.Choose(paused, _, _, rest) =
+        Engine.buttonCascade(Engine.setup(catalog, rulebook, setup), chooseFrom).toOption.get: @unchecked
+      val Progress.Ran(done, _, _) = Engine.step(paused, Engine.applyChoice(rest, deck), 0L).toOption.get: @unchecked
+      stackOf(done, discard).cards.head.id shouldBe CardId("deck#0")
+
   "A player-relative effect (one rule for every player)" should:
 
     "deal to the current player's deck when player 1 is active" in:
@@ -568,9 +587,10 @@ class EngineSpec extends AnyWordSpec with Matchers:
     // Drive a button cascade to its settled table, auto-resuming any manual pause —
     // the headless reading the animated shell would otherwise step through.
     def runAll(progress: Progress): GameState = progress match
-      case Progress.Done(s)              => s
-      case Progress.Ran(s, _, rest)      => runAll(Engine.step(s, rest, 0L).toOption.get)
-      case Progress.Await(s, _, _, rest) => runAll(Engine.step(s, rest, 0L).toOption.get)
+      case Progress.Done(s)               => s
+      case Progress.Ran(s, _, rest)       => runAll(Engine.step(s, rest, 0L).toOption.get)
+      case Progress.Await(s, _, _, rest)  => runAll(Engine.step(s, rest, 0L).toOption.get)
+      case Progress.Choose(s, _, _, rest) => runAll(Engine.step(s, rest.drop(1), 0L).toOption.get)
 
     "run a list of effects in order, resolving roles against the current player" in:
       val state   = Engine.setup(ownerCatalog, Rulebook(Nil), ownerSetup)
@@ -612,6 +632,12 @@ class EngineSpec extends AnyWordSpec with Matchers:
 
     "round-trip an owned stack reference unchanged" in:
       read[StackRef](write(StackRef.Owned("deck"))) shouldBe StackRef.Owned("deck")
+
+    "round-trip a player-choice stack reference unchanged" in:
+      read[StackRef](write(StackRef.Choice)) shouldBe StackRef.Choice
+
+    "read a fixed stack reference whose id is 'choice' as a stack, not a player choice" in:
+      read[StackRef](write(StackRef("choice"))) shouldBe StackRef.Fixed(StackId("choice"))
 
     "round-trip an EndTurn effect unchanged" in:
       read[Effect](write(Effect.EndTurn)) shouldBe Effect.EndTurn
