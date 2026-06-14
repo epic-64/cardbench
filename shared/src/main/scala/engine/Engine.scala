@@ -127,6 +127,15 @@ object Engine:
     case Pending(card, effect, lenient) :: rest => Pending(card, fillChoice(effect, stack), lenient) :: rest
     case Nil                                    => Nil
 
+  /** Resume a cascade paused on a `MoveChosen` (`Progress.ChooseCard`): record the
+    * `chosen` card the player clicked into the queue's head `MoveChosen`, handing back
+    * a queue ready to `step` (which then resolves its `to` and moves the card). A head
+    * that is not an unfilled `MoveChosen` (or an empty queue) is returned unchanged.
+    */
+  def applyCardChoice(pending: List[Pending], chosen: CardId): List[Pending] = pending match
+    case Pending(card, effect, lenient) :: rest => Pending(card, fillCard(effect, chosen), lenient) :: rest
+    case Nil                                    => Nil
+
   /** Advance a cascade by a single effect: run the head of the queue against the
     * *given* table and report a `Progress`. The one place a cascade can be steered —
     * because the caller chooses the table to advance from, a paused cascade resumes
@@ -138,12 +147,18 @@ object Engine:
     pending match
       case Nil => Right(Progress.Done(state))
       case Pending(card, effect, lenient) :: rest =>
-        firstChoice(effect) match
-          // A `Choice` target can't resolve headlessly: pause and let the player name
-          // the stack. The whole queue (head included, choice still unfilled) rides
-          // along so `applyChoice` can fill it and the shell can step on.
-          case Some(slot) => Right(Progress.Choose(state, card, slot, pending))
-          case None       => stepResolved(state, card, effect, lenient, rest, seed)
+        effect match
+          // A `MoveChosen` with no card yet pauses for the player to pick one — before
+          // any stack choice on its `to`, so the card is chosen first. The whole queue
+          // rides along for `applyCardChoice` to fill and the shell to step on.
+          case Effect.MoveChosen(_, None) => Right(Progress.ChooseCard(state, card, pending))
+          case _ =>
+            firstChoice(effect) match
+              // A `Choice` target can't resolve headlessly: pause and let the player name
+              // the stack. The whole queue (head included, choice still unfilled) rides
+              // along so `applyChoice` can fill it and the shell can step on.
+              case Some(slot) => Right(Progress.Choose(state, card, slot, pending))
+              case None       => stepResolved(state, card, effect, lenient, rest, seed)
 
   // The body of a single step once any `Choice` target has been ruled out — the
   // effect is ready to resolve against the table as authored.
@@ -191,6 +206,23 @@ object Engine:
                   // Reactions resolve before the next dealt card: the move's own
                   // triggers go ahead of this deal's remaining count and the rest.
                   Progress.Ran(moved, steps, triggered ++ (Pending(card, Effect.Deal(StackRef.Fixed(from), toRef, count - 1), lenient) :: rest))
+          case Effect.MoveChosen(toRef, chosen) =>
+            // The card was picked in `step` (`MoveChosen(_, None)` pauses there), and
+            // any `Choice` on `toRef` was resolved before this point, so both ends are
+            // ready. The picked card might have since left the table (an earlier effect
+            // or a by-hand move) — that stops the move when lenient, aborts otherwise.
+            val resolved =
+              for
+                chosenId <- chosen.toRight(UnknownCard(noCard))
+                to       <- resolveRef(state, toRef)
+                _        <- findCard(state, chosenId).toRight(UnknownCard(chosenId))
+              yield (chosenId, to)
+            resolved match
+              case Left(_) if lenient => step(state, rest, seed)
+              case Left(err)          => Left(err)
+              case Right((chosenId, to)) =>
+                resolveOne(state, chosenId, to, seed).map: (moved, steps, triggered) =>
+                  Progress.Ran(moved, steps, triggered ++ rest)
 
   /** The flat step script a drop produces, manual prompts auto-resumed and their
     * steps concatenated — the headless counterpart of `dropCascade`. */
@@ -297,9 +329,10 @@ object Engine:
     case Progress.Done(s)              => Right(s)
     case Progress.Ran(s, _, rest)      => step(s, rest, seed).flatMap(runToEnd(_, seed))
     case Progress.Await(s, _, _, rest) => step(s, rest, seed).flatMap(runToEnd(_, seed))
-    // No player to pick the stack headlessly, so the choosing effect is dropped and
-    // the cascade runs on — the analogue of a `Manual` resolving to a no-op.
-    case Progress.Choose(s, _, _, rest) => step(s, rest.drop(1), seed).flatMap(runToEnd(_, seed))
+    // No player to pick the stack/card headlessly, so the choosing effect is dropped
+    // and the cascade runs on — the analogue of a `Manual` resolving to a no-op.
+    case Progress.Choose(s, _, _, rest)   => step(s, rest.drop(1), seed).flatMap(runToEnd(_, seed))
+    case Progress.ChooseCard(s, _, rest)  => step(s, rest.drop(1), seed).flatMap(runToEnd(_, seed))
 
   /** Flatten a cascade to its full step script, auto-resuming pauses and
     * concatenating each advance's steps — the headless step list, manual prompts
@@ -309,7 +342,8 @@ object Engine:
     case Progress.Ran(s, steps, rest)  => step(s, rest, seed).flatMap(collectSteps(_, seed)).map(steps ++ _)
     case Progress.Await(s, _, _, rest) => step(s, rest, seed).flatMap(collectSteps(_, seed))
     // Headless, the choosing effect is elided, exactly as a manual prompt is.
-    case Progress.Choose(s, _, _, rest) => step(s, rest.drop(1), seed).flatMap(collectSteps(_, seed))
+    case Progress.Choose(s, _, _, rest)  => step(s, rest.drop(1), seed).flatMap(collectSteps(_, seed))
+    case Progress.ChooseCard(s, _, rest) => step(s, rest.drop(1), seed).flatMap(collectSteps(_, seed))
 
   /** Turn an authored reference into a concrete stack id. A `Fixed` ref is its id
     * verbatim (its existence is checked where it's used, as before). An `Owned` ref
@@ -331,10 +365,12 @@ object Engine:
   // label for what it is — drives the play-time pause (`Progress.Choose`). `None`
   // when every target is already concrete or player-relative.
   private def firstChoice(effect: Effect): Option[String] = effect match
-    case Effect.Deal(StackRef.Choice, _, _) => Some("from")
-    case Effect.Deal(_, StackRef.Choice, _) => Some("to")
-    case Effect.Shuffle(StackRef.Choice)    => Some("stack")
-    case _                                  => None
+    case Effect.Deal(StackRef.Choice, _, _)            => Some("from")
+    case Effect.Deal(_, StackRef.Choice, _)            => Some("to")
+    case Effect.Shuffle(StackRef.Choice)               => Some("stack")
+    // Only once the card has been picked; a card-less MoveChosen pauses in `step` first.
+    case Effect.MoveChosen(StackRef.Choice, Some(_))   => Some("to")
+    case _                                             => None
 
   // Replace the first `StackRef.Choice` target in an effect with the picked stack —
   // the resolve step `applyChoice` performs once the player has chosen.
@@ -342,7 +378,14 @@ object Engine:
     case d @ Effect.Deal(StackRef.Choice, _, _) => d.copy(from = StackRef.Fixed(stack))
     case d @ Effect.Deal(_, StackRef.Choice, _) => d.copy(to = StackRef.Fixed(stack))
     case Effect.Shuffle(StackRef.Choice)        => Effect.Shuffle(StackRef.Fixed(stack))
+    case m @ Effect.MoveChosen(StackRef.Choice, _) => m.copy(to = StackRef.Fixed(stack))
     case other                                  => other
+
+  // Record the picked card into a `MoveChosen` — the resolve `applyCardChoice` does
+  // once the player has clicked one.
+  private def fillCard(effect: Effect, chosen: CardId): Effect = effect match
+    case m @ Effect.MoveChosen(_, None) => m.copy(card = Some(chosen))
+    case other                          => other
 
   /** Whether `trigger` fires on `event` against this table. The trigger's `to`
     * reference is resolved here (an `Owned` ref against the current player), so a

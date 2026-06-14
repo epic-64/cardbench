@@ -452,3 +452,16 @@
 .stack-choosable:hover .card {
   outline-style: solid;
 }
+
+/* While a card choice is pending every card on the board is pickable: the same accent
+   ring, but resolved per card so the one under the cursor (a specific card in a row,
+   or a pile's lone visible top) lights up solid as the one about to be moved. */
+.choosing-card .card {
+  cursor: pointer;
+  outline: 2px dashed var(--accent);
+  outline-offset: 3px;
+}
+
+.choosing-card .card:hover {
+  outline-style: solid;
+}

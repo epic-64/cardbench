@@ -248,10 +248,11 @@ class EngineSpec extends AnyWordSpec with Matchers:
 
     // Drive a cascade to its settled table — EndTurn produces one bookkeeping step.
     def runAll(progress: Progress): GameState = progress match
-      case Progress.Done(s)               => s
-      case Progress.Ran(s, _, rest)       => runAll(Engine.step(s, rest, 0L).toOption.get)
-      case Progress.Await(s, _, _, rest)  => runAll(Engine.step(s, rest, 0L).toOption.get)
-      case Progress.Choose(s, _, _, rest) => runAll(Engine.step(s, rest.drop(1), 0L).toOption.get)
+      case Progress.Done(s)                => s
+      case Progress.Ran(s, _, rest)        => runAll(Engine.step(s, rest, 0L).toOption.get)
+      case Progress.Await(s, _, _, rest)   => runAll(Engine.step(s, rest, 0L).toOption.get)
+      case Progress.Choose(s, _, _, rest)  => runAll(Engine.step(s, rest.drop(1), 0L).toOption.get)
+      case Progress.ChooseCard(s, _, rest) => runAll(Engine.step(s, rest.drop(1), 0L).toOption.get)
 
     "pass the turn when run from a button" in:
       val state = Engine.setup(catalog, rulebook, setup, players = 3)
@@ -552,6 +553,25 @@ class EngineSpec extends AnyWordSpec with Matchers:
       val Progress.Ran(done, _, _) = Engine.step(paused, Engine.applyChoice(rest, deck), 0L).toOption.get: @unchecked
       stackOf(done, discard).cards.head.id shouldBe CardId("deck#0")
 
+  "A move-chosen-card effect" should:
+
+    // A button that moves a card the player picks onto the discard: the cascade pauses
+    // for the card, and filling it with a specific card moves that one, not the top.
+    val moveChosen = List(Effect.MoveChosen(StackRef("discard")))
+
+    "pause for a card, anchored on the triggering card" in:
+      val Progress.ChooseCard(_, anchor, _) =
+        Engine.buttonCascade(Engine.setup(catalog, rulebook, setup), moveChosen).toOption.get: @unchecked
+      anchor shouldBe CardId("") // a button's own effect carries no triggering card
+
+    "move exactly the card the player picks once the choice is filled" in:
+      val Progress.ChooseCard(paused, _, rest) =
+        Engine.buttonCascade(Engine.setup(catalog, rulebook, setup), moveChosen).toOption.get: @unchecked
+      val resumed = Engine.step(paused, Engine.applyCardChoice(rest, CardId("deck#5")), 0L).toOption.get
+      val Progress.Ran(done, _, _) = resumed: @unchecked
+      stackOf(done, discard).cards.head.id shouldBe CardId("deck#5")
+      stackOf(done, deck).cards.exists(_.id == CardId("deck#5")) shouldBe false
+
   "A player-relative effect (one rule for every player)" should:
 
     "deal to the current player's deck when player 1 is active" in:
@@ -587,10 +607,11 @@ class EngineSpec extends AnyWordSpec with Matchers:
     // Drive a button cascade to its settled table, auto-resuming any manual pause —
     // the headless reading the animated shell would otherwise step through.
     def runAll(progress: Progress): GameState = progress match
-      case Progress.Done(s)               => s
-      case Progress.Ran(s, _, rest)       => runAll(Engine.step(s, rest, 0L).toOption.get)
-      case Progress.Await(s, _, _, rest)  => runAll(Engine.step(s, rest, 0L).toOption.get)
-      case Progress.Choose(s, _, _, rest) => runAll(Engine.step(s, rest.drop(1), 0L).toOption.get)
+      case Progress.Done(s)                => s
+      case Progress.Ran(s, _, rest)        => runAll(Engine.step(s, rest, 0L).toOption.get)
+      case Progress.Await(s, _, _, rest)   => runAll(Engine.step(s, rest, 0L).toOption.get)
+      case Progress.Choose(s, _, _, rest)  => runAll(Engine.step(s, rest.drop(1), 0L).toOption.get)
+      case Progress.ChooseCard(s, _, rest) => runAll(Engine.step(s, rest.drop(1), 0L).toOption.get)
 
     "run a list of effects in order, resolving roles against the current player" in:
       val state   = Engine.setup(ownerCatalog, Rulebook(Nil), ownerSetup)
@@ -641,6 +662,9 @@ class EngineSpec extends AnyWordSpec with Matchers:
 
     "round-trip an EndTurn effect unchanged" in:
       read[Effect](write(Effect.EndTurn)) shouldBe Effect.EndTurn
+
+    "round-trip a move-chosen-card effect unchanged" in:
+      read[Effect](write(Effect.MoveChosen(StackRef("discard")))) shouldBe Effect.MoveChosen(StackRef("discard"))
 
     "round-trip a setup unchanged" in:
       read[GameSetup](write(setup)) shouldBe setup

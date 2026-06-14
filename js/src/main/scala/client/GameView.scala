@@ -32,6 +32,10 @@ object GameView:
   // continuation as plain data — the queue (its head's choice still unfilled) plus
   // the play's seed, so resuming is `Engine.applyChoice` then another `Engine.step`.
   private final case class ChoicePrompt(card: CardId, slot: String, rest: List[engine.Pending], seed: Long)
+  // A cascade halted on a `MoveChosen`: the card the prompt anchors to, and the
+  // continuation as plain data — the queue (its head's card still unpicked) plus the
+  // seed, so resuming is `Engine.applyCardChoice` then another `Engine.step`.
+  private final case class CardChoicePrompt(card: CardId, rest: List[engine.Pending], seed: Long)
 
   def view(definition: GameDefinition, onBack: () => Unit): Element =
     // A fresh table from the authored data; the saved live table (if a game is in
@@ -88,6 +92,18 @@ object GameView:
     // stack to fill the choice, resuming the cascade. A "Cancel" abandons it.
     val choicePause = Var(Option.empty[ChoicePrompt])
 
+    // The card-choice prompt awaiting the player, if any: a cascade paused on a
+    // `MoveChosen`. While it's set a click on a card *picks* that card to move (the
+    // top of a pile, or a specific card in a row) rather than flipping it. Cancel
+    // abandons it. Never set at the same time as `choicePause` — a single effect
+    // raises one pause at a time.
+    val cardChoicePause = Var(Option.empty[CardChoicePrompt])
+
+    // True while either pick prompt is up. The board's normal gestures are suppressed
+    // and a click instead makes the pick (a stack for `choicePause`, a card for
+    // `cardChoicePause`); read by every interaction guard below.
+    def pickPending: Boolean = choicePause.now().isDefined || cardChoicePause.now().isDefined
+
     // Which stack (if any) is open in the inspect overlay: a full view of every
     // card in the pile, with click-to-pull. Cleared when dismissed or once the
     // inspected stack empties out from under it.
@@ -130,10 +146,18 @@ object GameView:
         case Some(prompt) => choiceDialog(prompt)
         case None         => emptyNode
       },
+      // The card-choice prompt, likewise.
+      child <-- cardChoicePause.signal.map {
+        case Some(prompt) => cardChoiceDialog(prompt)
+        case None         => emptyNode
+      },
     )
 
     lazy val board: HtmlElement = div(
       cls := "board",
+      // While a card choice is pending every card reads as pickable (see CSS) — a
+      // click on one moves it. One class on the board styles them all at once.
+      cls("choosing-card") <-- cardChoicePause.signal.map(_.isDefined).distinct,
       onDragOver --> (e => onBoardDragOver(e)),
       onDrop --> (e => onBoardDrop(e)),
       onWheel --> (e => onZoom(e)),
@@ -203,7 +227,7 @@ object GameView:
     // under the cursor. Drops onto a stack are handled by the stack itself.
     def onBoardDrop(e: dom.DragEvent): Unit =
       clearDragGhost()
-      if animating || choicePause.now().isDefined then ()
+      if animating || pickPending then ()
       else
         e.preventDefault()
         val p = boardPoint(e.clientX, e.clientY)
@@ -271,7 +295,7 @@ object GameView:
         title := "Flip every card in this stack",
         "👁", // 👁 eye
         onClick --> { _ =>
-          if !animating && choicePause.now().isEmpty then state.update(s => Engine.flipStack(s, stack.id).getOrElse(s))
+          if !animating && !pickPending then state.update(s => Engine.flipStack(s, stack.id).getOrElse(s))
         },
       )
 
@@ -280,7 +304,7 @@ object GameView:
         cls   := "stack-inspect",
         title := "Inspect every card in this stack",
         "🔍", // 🔍 magnifying lens
-        onClick --> (_ => if !animating && choicePause.now().isEmpty then inspecting.set(Some(stack.id))),
+        onClick --> (_ => if !animating && !pickPending then inspecting.set(Some(stack.id))),
       )
 
     def shuffleButton(stack: Stack): Element =
@@ -291,7 +315,7 @@ object GameView:
         onClick --> { _ =>
           // Mark the stack first so the re-rendered element mounts with the
           // animation class already on; a timer clears it once the shake ends.
-          if !animating && choicePause.now().isEmpty then
+          if !animating && !pickPending then
             shuffling.set(Some(stack.id))
             dom.window.setTimeout(() => shuffling.set(None), shuffleAnimMs)
             state.update(s => Engine.shuffle(s, stack.id, System.currentTimeMillis()).getOrElse(s))
@@ -318,7 +342,7 @@ object GameView:
     // like a drop. Ignored while a script runs or a manual prompt is open; effects
     // run leniently, so a deal from an empty source simply resolves to nothing.
     def runButton(b: StackButton): Unit =
-      if !animating && manualPause.now().isEmpty && choicePause.now().isEmpty then
+      if !animating && manualPause.now().isEmpty && !pickPending then
         startCascade(Engine.buttonCascade(state.now(), b.effects, _), None)
 
     // ── animated drops ─────────────────────────────────────────────────────
@@ -425,6 +449,10 @@ object GameView:
           // Release the board and raise the picker; a stack click resolves it.
           animating = false
           choicePause.set(Some(ChoicePrompt(card, slot, rest, seed)))
+        case Progress.ChooseCard(_, card, rest) =>
+          // Release the board and raise the picker; a card click resolves it.
+          animating = false
+          cardChoicePause.set(Some(CardChoicePrompt(card, rest, seed)))
 
     // Kick off a cascade, ignoring one that resolved to nothing (Left). The play's
     // seed is rolled once here and threaded through every advance so shuffles stay
@@ -456,6 +484,19 @@ object GameView:
       choicePause.set(None)
       animating = false
 
+    // Fill the pending card choice with the card the player clicked and resume the
+    // cascade; the move's resolve (and any stack choice on its destination) plays out
+    // through `drive`, which may pause again.
+    def resolveCardChoice(prompt: CardChoicePrompt, card: CardId): Unit =
+      cardChoicePause.set(None)
+      animating = true
+      Engine.step(state.now(), Engine.applyCardChoice(prompt.rest, card), prompt.seed).foreach(drive(_, None, prompt.seed))
+
+    // Abandon a pending card choice, dropping the rest of its cascade.
+    def cancelCardChoice(): Unit =
+      cardChoicePause.set(None)
+      animating = false
+
     // Drop a card onto a stack: relocate it and play out whatever reactions the
     // rules fire, as an animated cascade. The card just merging on top with no rule
     // to react is simply the one-step case. A drop that resolves to nothing (Left)
@@ -478,7 +519,7 @@ object GameView:
       // dropped card can glide from where it was released rather than its origin.
       val released = dragGhost.map((g, _, _) => g.getBoundingClientRect())
       clearDragGhost()
-      if animating || choicePause.now().isDefined then ()
+      if animating || pickPending then ()
       else
         dragCard.foreach: c =>
           e.preventDefault()
@@ -499,7 +540,7 @@ object GameView:
         title := "Drag to move this stack",
         "⠿",
         onPointerDown --> { e =>
-          if !animating && choicePause.now().isEmpty then
+          if !animating && !pickPending then
             e.preventDefault()
             val handle  = e.currentTarget.asInstanceOf[dom.Element]
             val stackEl = handle.closest(".stack").asInstanceOf[dom.html.Element]
@@ -563,9 +604,18 @@ object GameView:
         clearDragGhost() // fallback for a cancelled drag / drop outside any target
         dragCard = None
       }
-      // Suppressed while a choice is pending — then a click bubbles to the stack and
-      // picks it instead of flipping the card.
-      val flip = onClick --> (_ => if !animating && choicePause.now().isEmpty then state.update(s => Engine.flip(s, card.id).getOrElse(s)))
+      // A card click flips it — except while a pick is pending. During a *card* choice
+      // the click instead picks this very card (stopping it from bubbling to the
+      // stack); during a *stack* choice it does nothing here and bubbles up so the
+      // stack handler picks the stack.
+      val flip = onClick --> { e =>
+        cardChoicePause.now() match
+          case Some(prompt) =>
+            e.stopPropagation()
+            resolveCardChoice(prompt, card.id)
+          case None =>
+            if !animating && !pickPending then state.update(s => Engine.flip(s, card.id).getOrElse(s))
+      }
       card.facing match
         case Facing.Down =>
           div(
@@ -695,6 +745,21 @@ object GameView:
         button(cls := "btn", "Cancel", onClick --> (_ => cancelChoice())),
       )
 
+    // The card-choice prompt: the same anchored dialog, asking the player to click the
+    // card to move. A pile shows only its top, so clicking one picks the top; a row
+    // shows every card, so a specific one can be picked. Cancel abandons the cascade.
+    def cardChoiceDialog(prompt: CardChoicePrompt): Element =
+      val anchor = state.signal.map(_.stacks.find(_.cards.exists(_.id == prompt.card)).map(_.position)).distinct
+      div(
+        cls := "manual-dialog choice-dialog",
+        styleAttr <-- anchor.combineWith(pan.signal).combineWith(zoom.signal).map {
+          case (Some(p), _, _) => s"left:${p.x + cardWidth + 8}px;top:${p.y}px"
+          case (None, pn, z)   => s"left:${((24 - pn.x) / z).toInt}px;top:${((96 - pn.y) / z).toInt}px"
+        },
+        div(cls := "manual-desc", "Click the card to move — the top of a pile, or any card in a row."),
+        button(cls := "btn", "Cancel", onClick --> (_ => cancelCardChoice())),
+      )
+
     // Snap every authored stack back to the position it started at. Loose stacks
     // split off mid-play have no authored home, so they're left where they lie.
     def restorePositions(): Unit =
@@ -706,8 +771,9 @@ object GameView:
     // game is itself the new ongoing game.
     def restartGame(): Unit =
       if !animating && dom.window.confirm("Restart this game from a fresh setup? Your current progress will be lost.") then
-        manualPause.set(None) // drop any pending prompt; its continuation is for the old table
-        choicePause.set(None) // likewise any pending choice — it belongs to the old table
+        manualPause.set(None)     // drop any pending prompt; its continuation is for the old table
+        choicePause.set(None)     // likewise any pending stack choice — it belongs to the old table
+        cardChoicePause.set(None) // and any pending card choice
         state.set(freshSetup())
 
     div(
