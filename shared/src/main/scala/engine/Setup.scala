@@ -42,6 +42,7 @@ case class StackSpec(
   group: String = "",                             // editor-only organisation: the id of the StackGroup this stack sits in ("" = ungrouped). Has no gameplay effect.
   owner: Option[Int] = None,                      // which player owns this stack (None = shared/global); the player a StackRef.Owned resolves against
   role: String = "",                              // the slot key a player-relative rule names (e.g. "deck", "build"); "" = not role-addressable
+  color: Option[String] = None,                   // an optional accent the stack glows with while empty (a CSS colour); None = no glow
 ) derives ReadWriter:
   /** How many cards wide this stack's area is expected to be, used by the layout
     * editor to size its footprint. A planning hint only — it never caps the card

@@ -262,14 +262,19 @@ object GameView:
       // Every stack gets a drag-to-move handle — even empty, single-card, or row
       // zones; the shuffle button rides along only where it makes sense.
       val controls = sideControls(stack)
+      // An authored glow only lights up while the stack stands empty — a cue that
+      // the slot is waiting to be filled. The colour rides in as a CSS variable the
+      // glow rule reads (see `.stack-glow` in engine.css).
+      val glow = stack.color.filter(_ => stack.cards.isEmpty)
       div(
         cls       := "stack",
         cls("stack-row") := (stack.layout == Layout.Row),
+        cls("stack-glow") := glow.isDefined,
         cls("shuffling") <-- shuffling.signal.map(_.contains(stack.id)).distinct,
         // While a choice is pending every stack reads as pickable; a click on one
         // fills the choice and resumes the cascade (see `choicePause`/`resolveChoice`).
         cls("stack-choosable") <-- choicePause.signal.map(_.isDefined).distinct,
-        styleAttr := s"left:${stack.position.x}px;top:${stack.position.y}px",
+        styleAttr := s"left:${stack.position.x}px;top:${stack.position.y}px" + glow.fold("")(c => s";--stack-glow:$c"),
         onDragOver --> (e => e.preventDefault()),
         onDrop --> (e => onStackDrop(e, stack)),
         onClick --> (_ => choicePause.now().foreach(p => resolveChoice(p, stack.id))),

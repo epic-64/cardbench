@@ -147,6 +147,23 @@
   cursor: default;
 }
 
+/* An empty stack carrying an authored accent glows in that colour (--stack-glow,
+   set inline by GameView) to flag a slot waiting to be filled. */
+.stack-glow .card-empty {
+  border-style: solid;
+  border-color: var(--stack-glow);
+  color: var(--stack-glow);
+  box-shadow:
+    0 0 8px 1px var(--stack-glow),
+    inset 0 0 8px -2px var(--stack-glow);
+  animation: stack-glow-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes stack-glow-pulse {
+  0%, 100% { box-shadow: 0 0 6px 0 var(--stack-glow), inset 0 0 6px -2px var(--stack-glow); }
+  50%      { box-shadow: 0 0 14px 3px var(--stack-glow), inset 0 0 10px -1px var(--stack-glow); }
+}
+
 .card-back {
   background-color: #1f1f2e;
   background-image: repeating-linear-gradient(
