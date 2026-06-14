@@ -37,16 +37,16 @@ object SampleGame:
   val rulebook: Rulebook = Rulebook(
     List(
       Rule(
-        Trigger.Moved(CardDefId("build"), StackId("play")),
+        Trigger.Moved(CardDefId("build"), StackRef("play")),
         effects = List(
           // First you draw a feature into your building zone, revealed by the
           // face-up zone it lands in…
-          Effect.Deal(StackId("features"), StackId("build-zone"), 1),
+          Effect.Deal(StackRef("features"), StackRef("build-zone"), 1),
           // …then shipping accrues debt: two Tech Debt cards turn up in your discard.
-          Effect.Deal(StackId("debt"), StackId("discard"), 2),
+          Effect.Deal(StackRef("debt"), StackRef("discard"), 2),
           // …and finally the spent Build card itself moves on from the play stack
           // to the discard — just another move, which fires its own event in turn.
-          Effect.Deal(StackId("play"), StackId("discard")),
+          Effect.Deal(StackRef("play"), StackRef("discard")),
         ),
       ),
     ),

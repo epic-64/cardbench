@@ -40,6 +40,8 @@ case class StackSpec(
   layout: Layout = Layout.Pile,                   // how the stack is shown: a heap (Pile) or a row of cards
   width: Option[Int] = None,                      // expected area width in cards; a layout hint, see areaWidth
   group: String = "",                             // editor-only organisation: the id of the StackGroup this stack sits in ("" = ungrouped). Has no gameplay effect.
+  owner: Option[Int] = None,                      // which player owns this stack (None = shared/global); the player a StackRef.Owned resolves against
+  role: String = "",                              // the slot key a player-relative rule names (e.g. "deck", "build"); "" = not role-addressable
 ) derives ReadWriter:
   /** How many cards wide this stack's area is expected to be, used by the layout
     * editor to size its footprint. A planning hint only — it never caps the card
@@ -89,11 +91,7 @@ case class CardCatalog(cards: List[CardDef]) derives ReadWriter
   * of def `card` coming to rest on stack `to`.
   */
 enum Trigger derives ReadWriter:
-  case Moved(card: CardDefId, to: StackId)
-
-  /** Whether this trigger fires on `event`. */
-  def fires(event: Event): Boolean = (this, event) match
-    case (Trigger.Moved(card, to), Event.Moved(_, defId, dest)) => card == defId && to == dest
+  case Moved(card: CardDefId, to: StackRef)
 
 /** A reaction in the effect system: when an event matches `trigger`, run its
   * `effects` in order. Held wholly apart from the `CardCatalog` so a card's

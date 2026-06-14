@@ -34,6 +34,8 @@ object Engine:
         shuffled = spec.arrangement == Arrangement.Shuffled,
         persistent = spec.persistent,
         layout = spec.layout,
+        owner = spec.owner,
+        role = spec.role,
       )
     GameState(defs, rulebook.rules, stacks)
 
@@ -103,7 +105,7 @@ object Engine:
     * the shell drives the rest with `step`.
     */
   def dealCascade(state: GameState, from: StackId, to: StackId, count: Int, seed: Long = 0L): Either[EngineError, Progress] =
-    step(state, List(Pending(noCard, Effect.Deal(from, to, count), lenient = true)), seed)
+    step(state, List(Pending(noCard, Effect.Deal(StackRef.Fixed(from), StackRef.Fixed(to), count), lenient = true)), seed)
 
   /** Advance a cascade by a single effect: run the head of the queue against the
     * *given* table and report a `Progress`. The one place a cascade can be steered —
@@ -119,22 +121,35 @@ object Engine:
         effect match
           case Effect.Manual(description) =>
             Right(Progress.Await(state, card, description, rest))
-          case Effect.Shuffle(stack) =>
-            val stackSeed = seed ^ stack.value.hashCode.toLong
-            shuffle(state, stack, stackSeed).map(reordered => Progress.Ran(reordered, List(Step.Shuffle(stack, stackSeed)), rest))
-          case Effect.Deal(_, _, count) if count <= 0 =>
-            step(state, rest, seed)
-          case Effect.Deal(from, to, count) =>
-            // The source may have vanished once its last card left (dropEmpty), so
-            // when lenient a missing or empty stack alike just stops the deal.
-            find(state, from).flatMap(_.cards.headOption.toRight(EmptyStack(from))) match
+          case Effect.Shuffle(stackRef) =>
+            // An unresolvable role (the current player owns no such stack) stops a
+            // lenient deal-side effect quietly; in a rule it aborts the cascade.
+            resolveRef(state, stackRef) match
               case Left(_) if lenient => step(state, rest, seed)
               case Left(err)          => Left(err)
-              case Right(top) =>
+              case Right(stack) =>
+                val stackSeed = seed ^ stack.value.hashCode.toLong
+                shuffle(state, stack, stackSeed).map(reordered => Progress.Ran(reordered, List(Step.Shuffle(stack, stackSeed)), rest))
+          case Effect.Deal(_, _, count) if count <= 0 =>
+            step(state, rest, seed)
+          case Effect.Deal(fromRef, toRef, count) =>
+            // Resolve both ends first; a missing source or empty stack (or, for a
+            // role ref, a player who owns no such stack) just stops the deal when
+            // lenient, and aborts the cascade otherwise.
+            val resolved =
+              for
+                from <- resolveRef(state, fromRef)
+                to   <- resolveRef(state, toRef)
+                top  <- find(state, from).flatMap(_.cards.headOption.toRight(EmptyStack(from)))
+              yield (from, to, top)
+            resolved match
+              case Left(_) if lenient => step(state, rest, seed)
+              case Left(err)          => Left(err)
+              case Right((from, to, top)) =>
                 resolveOne(state, top.id, to, seed).map: (moved, steps, triggered) =>
                   // Reactions resolve before the next dealt card: the move's own
                   // triggers go ahead of this deal's remaining count and the rest.
-                  Progress.Ran(moved, steps, triggered ++ (Pending(card, Effect.Deal(from, to, count - 1), lenient) :: rest))
+                  Progress.Ran(moved, steps, triggered ++ (Pending(card, Effect.Deal(StackRef.Fixed(from), toRef, count - 1), lenient) :: rest))
 
   /** The flat step script a drop produces, manual prompts auto-resumed and their
     * steps concatenated — the headless counterpart of `dropCascade`. */
@@ -231,7 +246,7 @@ object Engine:
       val flips     = Option.when(instance.facing != dest.facing)(Step.Flip(card)).toList
       val flipped   = flips.foldLeft(moved)((s, _) => flip(s, card).getOrElse(s))
       val event     = Event.Moved(card, instance.defId, to)
-      val triggered = state.rules.filter(_.trigger.fires(event)).flatMap(_.effects).map(Pending(card, _))
+      val triggered = state.rules.filter(r => triggerFires(state, r.trigger, event)).flatMap(_.effects).map(Pending(card, _))
       (flipped, Step.Move(card, to) :: flips, triggered)
 
   /** Drive a cascade to its final table, auto-resuming every pause against the same
@@ -249,6 +264,29 @@ object Engine:
     case Progress.Done(_)              => Right(Nil)
     case Progress.Ran(s, steps, rest)  => step(s, rest, seed).flatMap(collectSteps(_, seed)).map(steps ++ _)
     case Progress.Await(s, _, _, rest) => step(s, rest, seed).flatMap(collectSteps(_, seed))
+
+  /** Turn an authored reference into a concrete stack id. A `Fixed` ref is its id
+    * verbatim (its existence is checked where it's used, as before). An `Owned` ref
+    * resolves against the *current player*: the stack that player owns with the
+    * named role — so one rule retargets itself to whoever's turn it is.
+    */
+  private def resolveRef(state: GameState, ref: StackRef): Either[EngineError, StackId] = ref match
+    case StackRef.Fixed(id) => Right(id)
+    case StackRef.Owned(role) =>
+      state.stacks
+        .find(s => s.owner.contains(state.currentPlayer) && s.role == role)
+        .map(_.id)
+        .toRight(UnresolvedRole(role, state.currentPlayer))
+
+  /** Whether `trigger` fires on `event` against this table. The trigger's `to`
+    * reference is resolved here (an `Owned` ref against the current player), so a
+    * player-relative trigger only fires for the stack the current player owns; an
+    * unresolvable ref simply never matches.
+    */
+  private def triggerFires(state: GameState, trigger: Trigger, event: Event): Boolean =
+    (trigger, event) match
+      case (Trigger.Moved(card, toRef), Event.Moved(_, defId, dest)) =>
+        card == defId && resolveRef(state, toRef).toOption.contains(dest)
 
   private def find(state: GameState, id: StackId): Either[EngineError, Stack] =
     state.stacks.find(_.id == id).toRight(UnknownStack(id))

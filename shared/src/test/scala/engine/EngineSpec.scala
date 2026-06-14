@@ -24,10 +24,10 @@ class EngineSpec extends AnyWordSpec with Matchers:
   private val rulebook = Rulebook(
     List(
       Rule(
-        Trigger.Moved(CardDefId("build"), StackId("in-play")),
+        Trigger.Moved(CardDefId("build"), StackRef("in-play")),
         effects = List(
-          Effect.Deal(StackId("features"), StackId("build-zone"), 1),
-          Effect.Deal(StackId("debt"), StackId("discard"), 2),
+          Effect.Deal(StackRef("features"), StackRef("build-zone"), 1),
+          Effect.Deal(StackRef("debt"), StackRef("discard"), 2),
         ),
       ),
     ),
@@ -50,8 +50,8 @@ class EngineSpec extends AnyWordSpec with Matchers:
   private val shuffleRulebook = Rulebook(
     List(
       Rule(
-        Trigger.Moved(CardDefId("build"), StackId("in-play")),
-        effects = List(Effect.Shuffle(StackId("debt"))),
+        Trigger.Moved(CardDefId("build"), StackRef("in-play")),
+        effects = List(Effect.Shuffle(StackRef("debt"))),
       ),
     ),
   )
@@ -63,10 +63,10 @@ class EngineSpec extends AnyWordSpec with Matchers:
   private val manualRulebook = Rulebook(
     List(
       Rule(
-        Trigger.Moved(CardDefId("build"), StackId("in-play")),
+        Trigger.Moved(CardDefId("build"), StackRef("in-play")),
         effects = List(
           Effect.Manual(manualPrompt),
-          Effect.Deal(StackId("features"), StackId("build-zone"), 1),
+          Effect.Deal(StackRef("features"), StackRef("build-zone"), 1),
         ),
       ),
     ),
@@ -137,6 +137,62 @@ class EngineSpec extends AnyWordSpec with Matchers:
     List(
       StackSpec(StackId("a"), "A", Position(0, 0), Facing.Up, List(SpawnSpec(CardDefId("build"), 1)), persistent = true),
       StackSpec(StackId("b"), "B", Position(0, 0), Facing.Up, List(SpawnSpec(CardDefId("build"), 1)), persistent = false),
+    ),
+  )
+
+  // A two-player table for the player-relative effect system: a single shared Play
+  // zone owned by nobody, a shared Debt source, and one deck per player — each
+  // tagged with the shared role "deck". One rule (not one per player) sends 2 debt
+  // to the *current* player's deck whenever a Build lands on the shared Play zone.
+  private val ownerCatalog = CardCatalog(
+    List(
+      CardDef(CardDefId("build"), "#3b82f6", "Build", "Ship a feature."),
+      CardDef(CardDefId("debt"), "#6b7280", "Tech Debt", "Dead weight."),
+    ),
+  )
+  private val ownerRulebook = Rulebook(
+    List(
+      Rule(
+        Trigger.Moved(CardDefId("build"), StackRef("play")),
+        effects = List(Effect.Deal(StackRef("debt"), StackRef.Owned("deck"), 2)),
+      ),
+    ),
+  )
+  private val ownerSetup = GameSetup(
+    List(
+      StackSpec(StackId("hand"), "Hand", Position(0, 0), Facing.Up, List(SpawnSpec(CardDefId("build"), 1))),
+      StackSpec(StackId("play"), "Play", Position(0, 0), Facing.Up, Nil, persistent = true),
+      StackSpec(StackId("debt"), "Debt", Position(0, 0), Facing.Down, List(SpawnSpec(CardDefId("debt"), 10))),
+      StackSpec(StackId("deck1"), "Deck 1", Position(0, 0), Facing.Down, Nil, owner = Some(0), role = "deck"),
+      StackSpec(StackId("deck2"), "Deck 2", Position(0, 0), Facing.Down, Nil, owner = Some(1), role = "deck"),
+    ),
+  )
+
+  // A table for the trigger side of player-relative references: each player owns a
+  // "gate" stack, and one rule fires only when a Build lands on the *current*
+  // player's gate, dealing a token from a shared source into a shared sink so the
+  // firing is observable.
+  private val gateCatalog = CardCatalog(
+    List(
+      CardDef(CardDefId("build"), "#3b82f6", "Build", "x"),
+      CardDef(CardDefId("token"), "#999999", "Token", "y"),
+    ),
+  )
+  private val gateRulebook = Rulebook(
+    List(
+      Rule(
+        Trigger.Moved(CardDefId("build"), StackRef.Owned("gate")),
+        effects = List(Effect.Deal(StackRef("src"), StackRef("sink"), 1)),
+      ),
+    ),
+  )
+  private val gateSetup = GameSetup(
+    List(
+      StackSpec(StackId("hand"), "Hand", Position(0, 0), Facing.Up, List(SpawnSpec(CardDefId("build"), 1))),
+      StackSpec(StackId("src"), "Src", Position(0, 0), Facing.Up, List(SpawnSpec(CardDefId("token"), 5))),
+      StackSpec(StackId("sink"), "Sink", Position(0, 0), Facing.Up, Nil, persistent = true),
+      StackSpec(StackId("gate1"), "Gate 1", Position(0, 0), Facing.Up, Nil, persistent = true, owner = Some(0), role = "gate"),
+      StackSpec(StackId("gate2"), "Gate 2", Position(0, 0), Facing.Up, Nil, persistent = true, owner = Some(1), role = "gate"),
     ),
   )
 
@@ -461,10 +517,49 @@ class EngineSpec extends AnyWordSpec with Matchers:
       stackOf(played, StackId("build-zone")).cards.size shouldBe 1
       stackOf(played, StackId("features")).cards.size shouldBe 2
 
+  "A player-relative effect (one rule for every player)" should:
+
+    "deal to the current player's deck when player 1 is active" in:
+      val state  = Engine.setup(ownerCatalog, ownerRulebook, ownerSetup)
+      val played = Engine.drop(state, CardId("hand#0"), StackId("play")).toOption.get
+      stackOf(played, StackId("deck1")).cards.size shouldBe 2
+      stackOf(played, StackId("deck2")).cards shouldBe empty
+
+    "retarget the same rule to player 2's deck after the turn passes" in:
+      val state  = Engine.endTurn(Engine.setup(ownerCatalog, ownerRulebook, ownerSetup), 2)
+      val played = Engine.drop(state, CardId("hand#0"), StackId("play")).toOption.get
+      stackOf(played, StackId("deck2")).cards.size shouldBe 2
+      stackOf(played, StackId("deck1")).cards shouldBe empty
+
+    "abort when the current player owns no stack of the role" in:
+      val state = Engine.setup(ownerCatalog, ownerRulebook, ownerSetup).copy(currentPlayer = 5)
+      Engine.drop(state, CardId("hand#0"), StackId("play")) shouldBe Left(EngineError.UnresolvedRole("deck", 5))
+
+  "A player-relative trigger" should:
+
+    "fire when the card lands on the current player's owned stack" in:
+      val state  = Engine.setup(gateCatalog, gateRulebook, gateSetup)
+      val played = Engine.drop(state, CardId("hand#0"), StackId("gate1")).toOption.get
+      stackOf(played, StackId("sink")).cards.size shouldBe 1
+
+    "stay inert when the card lands on another player's owned stack" in:
+      val state  = Engine.setup(gateCatalog, gateRulebook, gateSetup)
+      val played = Engine.drop(state, CardId("hand#0"), StackId("gate2")).toOption.get
+      stackOf(played, StackId("sink")).cards shouldBe empty
+
   "JSON codecs" should:
 
     "round-trip a catalog unchanged" in:
       read[CardCatalog](write(catalog)) shouldBe catalog
+
+    "round-trip a player-relative rulebook unchanged" in:
+      read[Rulebook](write(ownerRulebook)) shouldBe ownerRulebook
+
+    "read a fixed stack reference from a bare string (legacy format)" in:
+      read[StackRef]("\"play\"") shouldBe StackRef.Fixed(StackId("play"))
+
+    "round-trip an owned stack reference unchanged" in:
+      read[StackRef](write(StackRef.Owned("deck"))) shouldBe StackRef.Owned("deck")
 
     "round-trip a setup unchanged" in:
       read[GameSetup](write(setup)) shouldBe setup
