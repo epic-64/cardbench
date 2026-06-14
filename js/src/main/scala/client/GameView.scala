@@ -35,7 +35,10 @@ object GameView:
     def freshSetup(): GameState =
       Engine.setup(definition.catalog, definition.rulebook, definition.setup, System.currentTimeMillis())
     val fresh   = freshSetup()
-    val initial = GameStore.loadGame(definition.id).map(stacks => fresh.copy(stacks = stacks)).getOrElse(fresh)
+    val initial = GameStore
+      .loadGame(definition.id)
+      .map(saved => fresh.copy(stacks = saved.stacks, currentPlayer = saved.currentPlayer))
+      .getOrElse(fresh)
     val state   = Var(initial)
     val catalog = fresh.catalog
     // The on-table card width in board pixels, from the shared layout; used to fan
@@ -628,6 +631,12 @@ object GameView:
       if !animating then
         state.update(s => definition.setup.stacks.foldLeft(s)((acc, sp) => Engine.moveStack(acc, sp.id, sp.position).getOrElse(acc)))
 
+    // Pass the turn to the next player. Inert while a play is animating or a
+    // manual prompt is open, so the turn never advances mid-cascade.
+    def endTurn(): Unit =
+      if !animating && manualPause.now().isEmpty then
+        state.update(s => Engine.endTurn(s, definition.players))
+
     // Throw away the in-progress table and re-deal from the authored setup. The
     // save observer below rewrites storage from the fresh state, so a restarted
     // game is itself the new ongoing game.
@@ -644,8 +653,9 @@ object GameView:
       // so only the live font size drives the signal.
       styleAttr <-- cardFont.signal.distinct.map(f => s"--card-font:${f}rem;${CardFace.vars(definition.layout)}"),
       // Mirror every settled table into storage so a reload resumes mid-game. The
-      // catalog and rules don't change in play, so only the stacks are saved.
-      state.signal.map(_.stacks).distinct --> (stacks => GameStore.saveGame(definition.id, stacks)),
+      // catalog and rules don't change in play, so only the stacks and whose turn
+      // it is are saved.
+      state.signal.map(s => SavedGame(s.stacks, s.currentPlayer)).distinct --> (saved => GameStore.saveGame(definition.id, saved)),
       div(
         cls := "toolbar",
         display <-- toolbarVisible.signal.map(v => if v then "flex" else "none").distinct,
@@ -663,6 +673,23 @@ object GameView:
           "↻ Restart game",
           onClick --> (_ => restartGame()),
         ),
+        // Whose turn it is, and the control to pass it on. Only meaningful with
+        // more than one player, so a solitaire game shows neither.
+        if definition.players > 1 then
+          div(
+            cls := "turn-control",
+            span(
+              cls := "turn-indicator",
+              child.text <-- state.signal.map(s => s"Player ${s.currentPlayer + 1} of ${definition.players}").distinct,
+            ),
+            button(
+              cls   := "btn",
+              title := "Pass the turn to the next player",
+              "⟳ End turn",
+              onClick --> (_ => endTurn()),
+            ),
+          )
+        else emptyNode,
         // Card text size — independent of zoom. Bounded so the text can't vanish or
         // swamp the card; one notch per click.
         div(

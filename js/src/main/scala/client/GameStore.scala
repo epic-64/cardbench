@@ -2,8 +2,14 @@ package client
 
 import engine.*
 import org.scalajs.dom
-import upickle.default.{read, write}
+import upickle.default.{read, write, ReadWriter}
 import scala.util.Try
+
+/** The mutable part of a game in progress, saved apart from its definition: the
+  * live table (`stacks`) plus whose turn it is. A field with a default keeps a
+  * legacy save (a bare stack list, see `GameStore.loadGame`) loadable.
+  */
+case class SavedGame(stacks: List[Stack], currentPlayer: Int = 0) derives ReadWriter
 
 /** The library of game definitions, persisted in the browser's `localStorage`.
   *
@@ -65,23 +71,26 @@ object GameStore:
 
   // ── ongoing games ──────────────────────────────────────────────────────────
   // A game's *definition* (catalog, rules, setup) lives in the library above; its
-  // live table — where the cards have ended up mid-play — is saved apart, one key
-  // per game id. Only the mutable part (the stacks) is stored: the catalog and
-  // rules are rebuilt from the definition on load, so editing a game never leaves
-  // a saved table referring to a stale rulebook.
+  // live progress — where the cards have ended up mid-play and whose turn it is —
+  // is saved apart, one key per game id. Only the mutable part is stored: the
+  // catalog and rules are rebuilt from the definition on load, so editing a game
+  // never leaves a saved table referring to a stale rulebook.
 
   private def gameKey(id: String): String = s"cardbench.game.$id"
 
-  /** The saved live table for a game, if one is in progress; `None` when the game
-    * has never been played (or was restarted) and an unreadable save reads as none.
+  /** The saved live progress for a game, if one is in progress; `None` when the
+    * game has never been played (or was restarted) and an unreadable save reads as
+    * none. A legacy save (a bare stack list, written before turns existed) loads as
+    * a `SavedGame` on player 0, so games saved mid-play survive the upgrade.
     */
-  def loadGame(id: String): Option[List[Stack]] =
-    Option(dom.window.localStorage.getItem(gameKey(id)))
-      .flatMap(json => Try(read[List[Stack]](json)).toOption)
+  def loadGame(id: String): Option[SavedGame] =
+    Option(dom.window.localStorage.getItem(gameKey(id))).flatMap: json =>
+      Try(read[SavedGame](json)).toOption
+        .orElse(Try(read[List[Stack]](json)).toOption.map(SavedGame(_)))
 
-  /** Record the current live table for a game, overwriting any earlier save. */
-  def saveGame(id: String, stacks: List[Stack]): Unit =
-    dom.window.localStorage.setItem(gameKey(id), write(stacks))
+  /** Record the current live progress for a game, overwriting any earlier save. */
+  def saveGame(id: String, game: SavedGame): Unit =
+    dom.window.localStorage.setItem(gameKey(id), write(game))
 
   /** Forget a game's saved table, so the next play starts from a fresh setup. */
   def clearGame(id: String): Unit =

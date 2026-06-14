@@ -573,15 +573,20 @@ object EditorView:
         cls := "editor-body",
         div(
           cls := "editor-section",
-          label(
-            cls := "field",
-            span(cls := "field-label", "Name"),
-            input(
-              cls := "field-input",
-              typ := "text",
-              defaultValue := initial.name,
-              onInput.mapToValue --> (v => draft.update(_.copy(name = v))),
+          div(
+            cls := "editor-row",
+            label(
+              cls := "field",
+              span(cls := "field-label", "Name"),
+              input(
+                cls := "field-input",
+                typ := "text",
+                defaultValue := initial.name,
+                onInput.mapToValue --> (v => draft.update(_.copy(name = v))),
+              ),
             ),
+            // At least one player — a count below one would leave nobody to take a turn.
+            numberField("Players", initial.players.max(1), n => draft.update(_.copy(players = n.max(1)))),
           ),
         ),
         div(
