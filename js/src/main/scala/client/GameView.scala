@@ -738,7 +738,7 @@ object GameView:
     // A pile shows only its top card: a layered look for depth, plus any shuffle badge.
     def topView(stack: Stack): Element =
       stack.cards.headOption match
-        case None => div(cls := "card card-empty", "—")
+        case None => div(cls := "card card-empty")
         case Some(card) =>
           val depth = if stack.cards.size > 1 then Seq("card-stacked") else Nil
           val badge = if stack.shuffled then div(cls := "shuffle-badge", "⇄") else emptyNode
@@ -747,7 +747,7 @@ object GameView:
     // A row zone spreads every card side by side — oldest left, newest right, so a
     // card dealt in animates into a fresh slot without nudging the others.
     def rowView(stack: Stack): Element =
-      if stack.cards.isEmpty then div(cls := "card card-empty", "—")
+      if stack.cards.isEmpty then div(cls := "card card-empty")
       else div(cls := "zone-row", stack.cards.reverse.map(renderCard(stack, _, Nil, emptyNode)))
 
     // ── inspect overlay ──────────────────────────────────────────────────────
