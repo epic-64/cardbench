@@ -1,6 +1,6 @@
 package engine
 
-import upickle.default.{ReadWriter, readwriter}
+import upickle.default.{ReadWriter, readwriter, read, writeJs}
 
 // Three authored artifacts — catalog, rulebook, setup. JSON is the on-disk
 // format (upickle); these case classes are the schema.
@@ -51,21 +51,49 @@ case class StackSpec(
     case Layout.Pile => 1
     case Layout.Row  => width.getOrElse(3)
 
-/** What a stack button does when clicked. Each action deals cards between the
-  * button's own stack and one other: `DealFrom` draws `count` cards *into* the
-  * button's stack from `stack`; `DealTo` deals `count` cards *out of* the
-  * button's stack onto `stack`. A "draw" button on a hand is a `DealFrom` its
-  * deck; a "discard" button is a `DealTo` the discard pile.
+/** Legacy: a button once carried a single action — `DealFrom` drew `count` cards
+  * *into* the button's stack from `stack`; `DealTo` dealt `count` *out of* it onto
+  * `stack`. Buttons now carry a full effects list instead (see `StackButton`); this
+  * is kept only so games saved with the old shape still load, where `StackButton`'s
+  * reader turns each action into the equivalent `Effect.Deal`.
   */
 enum ButtonAction derives ReadWriter:
   case DealFrom(stack: StackId, count: Int = 1)
   case DealTo(stack: StackId, count: Int = 1)
 
-/** A clickable control bound to a stack: a labelled shortcut for a deal that the
-  * player would otherwise do by dragging. `stackId` is the stack it sits on; the
-  * `action` says which other stack it deals with and in which direction.
+/** A clickable control bound to a stack: a click-triggered ruleset, just like a
+  * `Rule` minus the trigger. `stackId` is the stack it sits on (where it renders);
+  * `effects` is the list it runs when clicked, each effect targeting a fixed stack
+  * or the current player's role exactly as a rule does. The effects run leniently —
+  * a deal stops when its source runs dry rather than aborting — so a "draw 4" on a
+  * short deck draws what's there.
   */
-case class StackButton(stackId: StackId, label: String, action: ButtonAction) derives ReadWriter
+case class StackButton(stackId: StackId, label: String, effects: List[Effect] = Nil)
+
+object StackButton:
+  // The new form is `{stackId, label, effects}`. A game saved before buttons held
+  // effects instead has `{stackId, label, action}` — read that too, turning the
+  // single action into one Deal between the button's own stack and the other.
+  private def legacyEffect(on: StackId, action: ButtonAction): Effect = action match
+    case ButtonAction.DealFrom(src, count) => Effect.Deal(StackRef.Fixed(src), StackRef.Fixed(on), count)
+    case ButtonAction.DealTo(dst, count)   => Effect.Deal(StackRef.Fixed(on), StackRef.Fixed(dst), count)
+
+  given ReadWriter[StackButton] = readwriter[ujson.Value].bimap(
+    b =>
+      ujson.Obj(
+        "stackId" -> writeJs(b.stackId),
+        "label"   -> ujson.Str(b.label),
+        "effects" -> writeJs(b.effects),
+      ),
+    json =>
+      val obj     = json.obj
+      val stackId = read[StackId](obj("stackId"))
+      val label   = obj("label").str
+      val effects = obj.get("effects") match
+        case Some(arr) => read[List[Effect]](arr)
+        case None      => obj.get("action").toList.map(a => legacyEffect(stackId, read[ButtonAction](a)))
+      StackButton(stackId, label, effects),
+  )
 
 /** A named bucket the stack editor groups stack definitions into, purely so a game
   * with many stacks stays navigable while authoring. `id` is the stable key stacks

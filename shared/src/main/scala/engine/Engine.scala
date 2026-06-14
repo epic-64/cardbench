@@ -107,6 +107,15 @@ object Engine:
   def dealCascade(state: GameState, from: StackId, to: StackId, count: Int, seed: Long = 0L): Either[EngineError, Progress] =
     step(state, List(Pending(noCard, Effect.Deal(StackRef.Fixed(from), StackRef.Fixed(to), count), lenient = true)), seed)
 
+  /** Begin a stack button's ruleset: run its authored `effects` in order — each
+    * lenient (a deal that can't draw just stops rather than aborting), each
+    * cascading through the rules and pausing on a `Manual` exactly like a rule's.
+    * References resolve against the current player, so one button serves whoever's
+    * turn it is. Returns the first advance; the shell drives the rest with `step`.
+    */
+  def buttonCascade(state: GameState, effects: List[Effect], seed: Long = 0L): Either[EngineError, Progress] =
+    step(state, effects.map(e => Pending(noCard, e, lenient = true)), seed)
+
   /** Advance a cascade by a single effect: run the head of the queue against the
     * *given* table and report a `Progress`. The one place a cascade can be steered —
     * because the caller chooses the table to advance from, a paused cascade resumes
