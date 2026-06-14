@@ -71,7 +71,8 @@
       { "stackId": "discard2", "label": "refresh deck", "effects": [ { "$type": "Deal", "from": { "role": "discard" }, "to": { "role": "deck" }, "count": 100 }, { "$type": "Shuffle", "stack": { "role": "deck" } } ] },
       { "stackId": "event-discard", "label": "refresh events", "effects": [ { "$type": "Deal", "from": "event-discard", "to": "events", "count": 100 } ] },
       { "stackId": "feature-discard", "label": "refresh features", "effects": [ { "$type": "Deal", "from": "feature-discard", "to": "features", "count": 100 } ] },
-      { "stackId": "project-zone", "label": "new project", "effects": [ { "$type": "Deal", "from": "features", "to": "project-zone", "count": 3 } ] }
+      { "stackId": "project-zone", "label": "new project", "effects": [ { "$type": "Deal", "from": "features", "to": "project-zone", "count": 3 } ] },
+      { "stackId": "play", "label": "end turn", "effects": [ { "$type": "EndTurn" } ] }
     ],
     "groups": [
       { "id": "group-0", "name": "Player 1" },

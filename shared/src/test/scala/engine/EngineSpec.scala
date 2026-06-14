@@ -235,14 +235,30 @@ class EngineSpec extends AnyWordSpec with Matchers:
   "Engine.endTurn" should:
 
     "pass the turn to the next player" in:
-      Engine.endTurn(Engine.setup(catalog, rulebook, setup), 3).currentPlayer shouldBe 1
+      Engine.endTurn(Engine.setup(catalog, rulebook, setup, players = 3)).currentPlayer shouldBe 1
 
     "wrap back to the first player after the last" in:
-      val lastPlayer = Engine.setup(catalog, rulebook, setup).copy(currentPlayer = 2)
-      Engine.endTurn(lastPlayer, 3).currentPlayer shouldBe 0
+      val lastPlayer = Engine.setup(catalog, rulebook, setup, players = 3).copy(currentPlayer = 2)
+      Engine.endTurn(lastPlayer).currentPlayer shouldBe 0
 
     "leave a solitaire game on the first player" in:
-      Engine.endTurn(Engine.setup(catalog, rulebook, setup), 1).currentPlayer shouldBe 0
+      Engine.endTurn(Engine.setup(catalog, rulebook, setup, players = 1)).currentPlayer shouldBe 0
+
+  "An EndTurn effect" should:
+
+    // Drive a cascade to its settled table — EndTurn produces one bookkeeping step.
+    def runAll(progress: Progress): GameState = progress match
+      case Progress.Done(s)              => s
+      case Progress.Ran(s, _, rest)      => runAll(Engine.step(s, rest, 0L).toOption.get)
+      case Progress.Await(s, _, _, rest) => runAll(Engine.step(s, rest, 0L).toOption.get)
+
+    "pass the turn when run from a button" in:
+      val state = Engine.setup(catalog, rulebook, setup, players = 3)
+      runAll(Engine.buttonCascade(state, List(Effect.EndTurn)).toOption.get).currentPlayer shouldBe 1
+
+    "wrap to the first player after the last" in:
+      val state = Engine.setup(catalog, rulebook, setup, players = 3).copy(currentPlayer = 2)
+      runAll(Engine.buttonCascade(state, List(Effect.EndTurn)).toOption.get).currentPlayer shouldBe 0
 
   "Engine.shuffle" should:
 
@@ -526,7 +542,7 @@ class EngineSpec extends AnyWordSpec with Matchers:
       stackOf(played, StackId("deck2")).cards shouldBe empty
 
     "retarget the same rule to player 2's deck after the turn passes" in:
-      val state  = Engine.endTurn(Engine.setup(ownerCatalog, ownerRulebook, ownerSetup), 2)
+      val state  = Engine.endTurn(Engine.setup(ownerCatalog, ownerRulebook, ownerSetup, players = 2))
       val played = Engine.drop(state, CardId("hand#0"), StackId("play")).toOption.get
       stackOf(played, StackId("deck2")).cards.size shouldBe 2
       stackOf(played, StackId("deck1")).cards shouldBe empty
@@ -565,7 +581,7 @@ class EngineSpec extends AnyWordSpec with Matchers:
       stackOf(done, StackId("deck2")).cards shouldBe empty
 
     "retarget the same button to the next player after the turn passes" in:
-      val state = Engine.endTurn(Engine.setup(ownerCatalog, Rulebook(Nil), ownerSetup), 2)
+      val state = Engine.endTurn(Engine.setup(ownerCatalog, Rulebook(Nil), ownerSetup, players = 2))
       val done  = runAll(Engine.buttonCascade(state, List(Effect.Deal(StackRef("debt"), StackRef.Owned("deck"), 2))).toOption.get)
       stackOf(done, StackId("deck2")).cards.size shouldBe 2
       stackOf(done, StackId("deck1")).cards shouldBe empty
@@ -596,6 +612,9 @@ class EngineSpec extends AnyWordSpec with Matchers:
 
     "round-trip an owned stack reference unchanged" in:
       read[StackRef](write(StackRef.Owned("deck"))) shouldBe StackRef.Owned("deck")
+
+    "round-trip an EndTurn effect unchanged" in:
+      read[Effect](write(Effect.EndTurn)) shouldBe Effect.EndTurn
 
     "round-trip a setup unchanged" in:
       read[GameSetup](write(setup)) shouldBe setup

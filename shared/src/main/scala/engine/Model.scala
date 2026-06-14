@@ -83,24 +83,29 @@ object Facing:
   * one stack in place. `Manual` is the escape hatch: it expresses any effect the
   * engine can't model by pausing the cascade and showing the player a prompt — the
   * player carries the effect out by hand, then marks it done, and the rest of the
-  * cascade resumes against whatever table they left behind. Everything richer
-  * composes from these.
+  * cascade resumes against whatever table they left behind. `EndTurn` advances the
+  * turn to the next player (see `GameState.currentPlayer`, `Engine.endTurn`), so
+  * "pass the turn" is just another effect a button or rule can run. Everything
+  * richer composes from these.
   */
 enum Effect derives ReadWriter:
   case Deal(from: StackRef, to: StackRef, count: Int = 1)
   case Shuffle(stack: StackRef)
   case Manual(description: String)
+  case EndTurn
 
 /** One atomic, animatable change in a cascade: relocate a single card, flip one,
-  * or reorder a stack. `Engine.dropSteps` emits these in order so the shell can
-  * animate them one by one; `Engine.drop` simply applies them all at once. A
-  * `Shuffle` step carries the concrete `seed` the cascade rolled, so replaying
-  * the script reproduces the exact same order.
+  * reorder a stack, or pass the turn. `Engine.dropSteps` emits these in order so the
+  * shell can animate them one by one; `Engine.drop` simply applies them all at once.
+  * A `Shuffle` step carries the concrete `seed` the cascade rolled, so replaying the
+  * script reproduces the exact same order. `EndTurn` carries nothing — it just bumps
+  * the current player when the shell reaches it.
   */
 enum Step:
   case Move(card: CardId, to: StackId)
   case Flip(card: CardId)
   case Shuffle(stack: StackId, seed: Long)
+  case EndTurn
 
 /** A reaction still queued to run, tagged with the `card` whose arrival triggered
   * the rule it came from (so a `Manual` can anchor its prompt on that card) and a
@@ -313,6 +318,7 @@ case class GameState(
   rules: List[Rule],
   stacks: List[Stack],
   currentPlayer: Int = 0,
+  players: Int = 1, // how many players take turns; `EndTurn` wraps `currentPlayer` within this
 )
 
 /** A move that could not be applied. Verbs return these instead of throwing. */

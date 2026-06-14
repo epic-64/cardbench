@@ -33,7 +33,7 @@ object GameView:
     // progress) only restores the stacks onto it, so the catalog and rules always
     // come from the current definition even after an edit.
     def freshSetup(): GameState =
-      Engine.setup(definition.catalog, definition.rulebook, definition.setup, System.currentTimeMillis())
+      Engine.setup(definition.catalog, definition.rulebook, definition.setup, System.currentTimeMillis(), definition.players)
     val fresh   = freshSetup()
     val initial = GameStore
       .loadGame(definition.id)
@@ -361,6 +361,10 @@ object GameView:
           state.update(s => Engine.shuffle(s, stack, seed).getOrElse(s))
           dom.window.setTimeout(() => shuffling.set(None), shuffleAnimMs)
           dom.window.setTimeout(() => done(), shuffleAnimMs)
+        case Step.EndTurn =>
+          // Passing the turn has no animation; apply it to the live table and move on.
+          state.update(s => Engine.endTurn(s))
+          done()
 
     // Animate one batch of steps in order, calling `onDone` once the last settles.
     // `firstFrom` overrides only the first step's glide origin (the dropped card);
@@ -633,12 +637,6 @@ object GameView:
       if !animating then
         state.update(s => definition.setup.stacks.foldLeft(s)((acc, sp) => Engine.moveStack(acc, sp.id, sp.position).getOrElse(acc)))
 
-    // Pass the turn to the next player. Inert while a play is animating or a
-    // manual prompt is open, so the turn never advances mid-cascade.
-    def endTurn(): Unit =
-      if !animating && manualPause.now().isEmpty then
-        state.update(s => Engine.endTurn(s, definition.players))
-
     // Throw away the in-progress table and re-deal from the authored setup. The
     // save observer below rewrites storage from the fresh state, so a restarted
     // game is itself the new ongoing game.
@@ -675,23 +673,6 @@ object GameView:
           "↻ Restart game",
           onClick --> (_ => restartGame()),
         ),
-        // Whose turn it is, and the control to pass it on. Only meaningful with
-        // more than one player, so a solitaire game shows neither.
-        if definition.players > 1 then
-          div(
-            cls := "turn-control",
-            span(
-              cls := "turn-indicator",
-              child.text <-- state.signal.map(s => s"Player ${s.currentPlayer + 1} of ${definition.players}").distinct,
-            ),
-            button(
-              cls   := "btn",
-              title := "Pass the turn to the next player",
-              "⟳ End turn",
-              onClick --> (_ => endTurn()),
-            ),
-          )
-        else emptyNode,
         // Card text size — independent of zoom. Bounded so the text can't vanish or
         // swamp the card; one notch per click.
         div(

@@ -208,6 +208,8 @@ object EditorView:
               textAreaField("Description", description, v => updateManual(_.copy(description = v))),
               actions,
             )
+          case Effect.EndTurn =>
+            div(cls := "editor-effect", kindField, actions)
       // Rebuild the effect rows when one is added, removed, *or* retyped: the signal
       // keys off the list of effect kinds, not just its length, so switching a Deal
       // to a Shuffle re-renders that row with the new effect's fields.
@@ -710,7 +712,7 @@ object EditorView:
   // An effect is a tagged choice too: a single "+ Add effect" button drops in a
   // Deal, and a per-row type select swaps between the kinds, carrying a stack id
   // across so retyping doesn't blank the row.
-  private val effectKindOptions = List("Deal" -> "deal", "Shuffle" -> "shuffle", "Manual" -> "manual")
+  private val effectKindOptions = List("Deal" -> "deal", "Shuffle" -> "shuffle", "Manual" -> "manual", "End turn" -> "endturn")
 
   // A stack reference is a tagged choice between a fixed stack and the current
   // player's stack of a role; these read its two sides for the drop-downs.
@@ -727,8 +729,13 @@ object EditorView:
     case _: Effect.Deal    => "deal"
     case _: Effect.Shuffle => "shuffle"
     case _: Effect.Manual  => "manual"
+    case Effect.EndTurn    => "endturn"
 
   private def withEffectKind(e: Effect, kind: String): Effect = (e, kind) match
+    case (_, "endturn")                 => Effect.EndTurn
+    case (Effect.EndTurn, "deal")       => Effect.Deal(StackRef(""), StackRef(""))
+    case (Effect.EndTurn, "shuffle")    => Effect.Shuffle(StackRef(""))
+    case (Effect.EndTurn, "manual")     => Effect.Manual("")
     case (d: Effect.Deal, "shuffle")    => Effect.Shuffle(d.from)
     case (d: Effect.Deal, "manual")     => Effect.Manual("")
     case (s: Effect.Shuffle, "deal")    => Effect.Deal(s.stack, StackRef(""))
