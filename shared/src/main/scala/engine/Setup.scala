@@ -61,38 +61,55 @@ enum ButtonAction derives ReadWriter:
   case DealFrom(stack: StackId, count: Int = 1)
   case DealTo(stack: StackId, count: Int = 1)
 
-/** A clickable control bound to a stack: a click-triggered ruleset, just like a
-  * `Rule` minus the trigger. `stackId` is the stack it sits on (where it renders);
-  * `effects` is the list it runs when clicked, each effect targeting a fixed stack
-  * or the current player's role exactly as a rule does. The effects run leniently —
-  * a deal stops when its source runs dry rather than aborting — so a "draw 4" on a
-  * short deck draws what's there.
+/** What stack(s) a button sits on. `OnStack` pins it to one concrete stack by id — the
+  * only kind before roles existed. `OnRole` is *role-relative*: the button renders on
+  * *every* stack carrying that role (one per player, typically), so a control authored
+  * once appears on each player's matching stack and, paired with `StackRef.Same` in its
+  * effects, acts on the owner of whichever instance was clicked (see `Engine.buttonCascade`).
   */
-case class StackButton(stackId: StackId, label: String, effects: List[Effect] = Nil)
+enum ButtonHost:
+  case OnStack(id: StackId)
+  case OnRole(role: String)
+
+/** A clickable control bound to a stack: a click-triggered ruleset, just like a
+  * `Rule` minus the trigger. `host` is where it renders — a fixed stack, or every
+  * stack of a role; `effects` is the list it runs when clicked, each effect targeting
+  * a fixed stack, the current player's role, or the host owner's role exactly as a
+  * rule does. The effects run leniently — a deal stops when its source runs dry rather
+  * than aborting — so a "draw 4" on a short deck draws what's there.
+  */
+case class StackButton(host: ButtonHost, label: String, effects: List[Effect] = Nil)
 
 object StackButton:
-  // The new form is `{stackId, label, effects}`. A game saved before buttons held
-  // effects instead has `{stackId, label, action}` — read that too, turning the
-  // single action into one Deal between the button's own stack and the other.
+  // The new form is `{stackId|role, label, effects}` — a `role` key marks a role-hosted
+  // button, otherwise `stackId` pins it to one stack. A game saved before buttons held
+  // effects instead has `{stackId, label, action}` — read that too, turning the single
+  // action into one Deal between the button's own (necessarily fixed) stack and the other.
   private def legacyEffect(on: StackId, action: ButtonAction): Effect = action match
     case ButtonAction.DealFrom(src, count) => Effect.Deal(StackRef.Fixed(src), StackRef.Fixed(on), count)
     case ButtonAction.DealTo(dst, count)   => Effect.Deal(StackRef.Fixed(on), StackRef.Fixed(dst), count)
 
   given ReadWriter[StackButton] = readwriter[ujson.Value].bimap(
     b =>
-      ujson.Obj(
-        "stackId" -> writeJs(b.stackId),
-        "label"   -> ujson.Str(b.label),
-        "effects" -> writeJs(b.effects),
-      ),
+      val hostField = b.host match
+        case ButtonHost.OnStack(id)  => "stackId" -> writeJs(id)
+        case ButtonHost.OnRole(role) => "role"    -> ujson.Str(role)
+      ujson.Obj.from(List(hostField, "label" -> ujson.Str(b.label), "effects" -> writeJs(b.effects))),
     json =>
-      val obj     = json.obj
-      val stackId = read[StackId](obj("stackId"))
-      val label   = obj("label").str
+      val obj   = json.obj
+      val label = obj("label").str
+      val host = obj.get("role") match
+        case Some(role) => ButtonHost.OnRole(role.str)
+        case None        => ButtonHost.OnStack(read[StackId](obj("stackId")))
       val effects = obj.get("effects") match
         case Some(arr) => read[List[Effect]](arr)
-        case None      => obj.get("action").toList.map(a => legacyEffect(stackId, read[ButtonAction](a)))
-      StackButton(stackId, label, effects),
+        // A legacy single action only ever sat on a fixed stack, so `host` is `OnStack` here.
+        case None =>
+          val on = host match
+            case ButtonHost.OnStack(id) => id
+            case ButtonHost.OnRole(_)   => StackId("")
+          obj.get("action").toList.map(a => legacyEffect(on, read[ButtonAction](a)))
+      StackButton(host, label, effects),
   )
 
 /** A named bucket the stack editor groups stack definitions into, purely so a game

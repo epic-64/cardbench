@@ -31,13 +31,19 @@ object StackId:
   * resolves at run time to the stack with that role owned by the *current* player
   * (see `GameState.currentPlayer` and `Engine.resolveRef`). One `Owned`-referencing
   * rule serves every player, so a turn-based game needs no per-player duplicates.
-  * `Choice` defers the target to *play time*: the cascade pauses and the player
-  * clicks a stack to fill it in (see `Progress.Choose`, `Engine.applyChoice`), so a
-  * rule can let whoever's acting decide where a card goes.
+  * `Same` is *host-relative*: it names a `role` and resolves to the stack with that
+  * role owned by the *same* owner as the thing the effect hangs off — the stack a
+  * button sits on, or the stack a triggering card landed on (see `Engine.anchorRef`).
+  * So one button authored on a player's own stacks works for every player without
+  * naming the current player, and a rule's effects can target the owner of wherever
+  * the card came to rest. `Choice` defers the target to *play time*: the cascade
+  * pauses and the player clicks a stack to fill it in (see `Progress.Choose`,
+  * `Engine.applyChoice`), so a rule can let whoever's acting decide where a card goes.
   */
 enum StackRef:
   case Fixed(id: StackId)
   case Owned(role: String)
+  case Same(role: String)
   case Choice
 
 object StackRef:
@@ -47,17 +53,20 @@ object StackRef:
 
   // On the wire a `Fixed` ref is just its bare string — exactly the shape every
   // game saved before roles existed already uses, so those files still load — an
-  // `Owned` ref is a small object carrying its role, and a `Choice` ref a small
-  // object flagged `choice` (so it can't be mistaken for a role).
+  // `Owned` ref is a small object carrying its `role`, a `Same` ref one carrying its
+  // `role` under a distinct `same` key (so it can't be mistaken for an `Owned`), and
+  // a `Choice` ref a small object flagged `choice`.
   given ReadWriter[StackRef] = readwriter[ujson.Value].bimap(
     {
       case StackRef.Fixed(id)   => ujson.Str(id.value)
       case StackRef.Owned(role) => ujson.Obj("role" -> ujson.Str(role))
+      case StackRef.Same(role)  => ujson.Obj("same" -> ujson.Str(role))
       case StackRef.Choice      => ujson.Obj("choice" -> ujson.Bool(true))
     },
     {
       case ujson.Str(id)                                  => StackRef.Fixed(StackId(id))
       case obj: ujson.Obj if obj.value.contains("choice") => StackRef.Choice
+      case obj: ujson.Obj if obj.value.contains("same")   => StackRef.Same(obj("same").str)
       case obj: ujson.Obj                                 => StackRef.Owned(obj("role").str)
       case other                                          => sys.error(s"Unknown stack reference: $other")
     },
@@ -358,3 +367,7 @@ enum EngineError:
   // A player-relative reference (`StackRef.Owned`) that no stack satisfies: the
   // current player owns no stack of that role.
   case UnresolvedRole(role: String, player: Int)
+  // A host-relative reference (`StackRef.Same`) that no stack satisfies: the owner of
+  // the button's stack (or of the stack a triggering card landed on) owns no stack of
+  // that role. `owner` is that host owner (`None` = a shared/global host).
+  case UnresolvedSame(role: String, owner: Option[Int])

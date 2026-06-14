@@ -104,6 +104,12 @@ object GameView:
     // `cardChoicePause`); read by every interaction guard below.
     def pickPending: Boolean = choicePause.now().isDefined || cardChoicePause.now().isDefined
 
+    // The last cascade failure, if any: a reference that named no stack, an effect on a
+    // missing stack — a misconfiguration the engine aborts on rather than swallowing.
+    // Shown as a dismissible banner and logged to the console, so a broken button or
+    // rule never just silently does nothing.
+    val cascadeError = Var(Option.empty[String])
+
     // Which stack (if any) is open in the inspect overlay: a full view of every
     // card in the pile, with click-to-pull. Cleared when dismissed or once the
     // inspected stack empties out from under it.
@@ -166,6 +172,17 @@ object GameView:
       onPointerUp --> (e => onPanEnd(e)),
       onPointerCancel --> (_ => panning = None),
       world,
+      // A cascade-failure banner, fixed to the viewport (it sits outside `world`, so it
+      // doesn't pan or zoom). Dismissed by its ✕ or by the next cascade succeeding.
+      child <-- cascadeError.signal.map {
+        case Some(msg) =>
+          div(
+            cls := "cascade-error",
+            span(cls := "cascade-error-text", msg),
+            button(cls := "cascade-error-close", title := "Dismiss", "✕", onClick --> (_ => cascadeError.set(None))),
+          )
+        case None => emptyNode
+      },
     )
 
     // Where the pointer sits in world coordinates — board pixels as the stacks see
@@ -324,26 +341,34 @@ object GameView:
 
     // Authored shortcuts bound to this stack: each clicks through to a deal
     // (drawing into the stack, or dealing out of it) that animates and fires rules
-    // just like a drag would. None render on loose stacks split off mid-play.
+    // just like a drag would. A button hosted on a *role* renders on every stack of
+    // that role — one per player — so a single authored control appears on each. None
+    // render on loose stacks split off mid-play.
     def stackButtons(stack: Stack): Node =
-      definition.setup.buttons.filter(_.stackId == stack.id) match
+      definition.setup.buttons.filter(b => hostsOn(b, stack)) match
         case Nil     => emptyNode
-        case buttons => div(cls := "stack-buttons", buttons.map(buttonControl))
+        case buttons => div(cls := "stack-buttons", buttons.map(buttonControl(_, stack)))
 
-    def buttonControl(b: StackButton): Element =
+    def hostsOn(b: StackButton, stack: Stack): Boolean = b.host match
+      case ButtonHost.OnStack(id)  => id == stack.id
+      case ButtonHost.OnRole(role) => role.nonEmpty && stack.role == role
+
+    def buttonControl(b: StackButton, stack: Stack): Element =
       button(
         cls := "stack-button",
         b.label,
-        onClick --> (_ => runButton(b)),
+        onClick --> (_ => runButton(b, stack)),
       )
 
     // A button runs its authored effects as a cascade — the same effect system the
-    // rules use, resolved against the current player — pausing on any Manual just
-    // like a drop. Ignored while a script runs or a manual prompt is open; effects
-    // run leniently, so a deal from an empty source simply resolves to nothing.
-    def runButton(b: StackButton): Unit =
+    // rules use — pausing on any Manual just like a drop. `Owned` refs resolve against
+    // the current player; `Same` refs against the owner of `stack` — the instance the
+    // button was clicked on — so a role-hosted control acts on whichever player's stack
+    // it sits on. Ignored while a script runs or a manual prompt is open; effects run
+    // leniently, so a deal from an empty source simply resolves to nothing.
+    def runButton(b: StackButton, stack: Stack): Unit =
       if !animating && manualPause.now().isEmpty && !pickPending then
-        startCascade(Engine.buttonCascade(state.now(), b.effects, _), None)
+        startCascade(Engine.buttonCascade(state.now(), b.effects, stack.owner, _), None)
 
     // ── animated drops ─────────────────────────────────────────────────────
     // A drop resolves as a script of atomic steps (Engine.dropSteps); we run it
@@ -441,7 +466,7 @@ object GameView:
         case Progress.Done(_) =>
           animating = false
         case Progress.Ran(_, steps, rest) =>
-          runSteps(steps, firstFrom, () => Engine.step(state.now(), rest, seed).foreach(drive(_, None, seed)))
+          runSteps(steps, firstFrom, () => continue(Engine.step(state.now(), rest, seed), None, seed))
         case Progress.Await(_, card, description, rest) =>
           animating = false
           manualPause.set(Some(ManualPrompt(card, description, rest, seed)))
@@ -454,21 +479,38 @@ object GameView:
           animating = false
           cardChoicePause.set(Some(CardChoicePrompt(card, rest, seed)))
 
-    // Kick off a cascade, ignoring one that resolved to nothing (Left). The play's
-    // seed is rolled once here and threaded through every advance so shuffles stay
-    // deterministic across the whole cascade, pauses included.
+    // Surface a cascade failure: stop the script, log it to the console, and raise the
+    // dismissible banner — so a misconfigured button or rule reports plainly instead of
+    // silently doing nothing.
+    def report(err: EngineError): Unit =
+      val msg = engineErrorMessage(err)
+      dom.console.error(s"Cascade aborted: $msg")
+      animating = false
+      cascadeError.set(Some(msg))
+
+    // Advance from an engine result: drive the cascade on success, raise the banner on
+    // failure. Every step of every cascade funnels through here, so no abort is dropped.
+    def continue(result: Either[EngineError, Progress], from: Option[dom.DOMRect], seed: Long): Unit =
+      result match
+        case Right(progress) => drive(progress, from, seed)
+        case Left(err)       => report(err)
+
+    // Kick off a cascade. The play's seed is rolled once here and threaded through
+    // every advance so shuffles stay deterministic across the whole cascade, pauses
+    // included. A failure to even begin (a bad reference) raises the banner.
     def startCascade(begin: Long => Either[EngineError, Progress], firstFrom: Option[dom.DOMRect]): Unit =
+      cascadeError.set(None) // a fresh attempt clears any prior failure banner
       val seed = System.currentTimeMillis()
-      begin(seed).foreach: progress =>
-        animating = true
-        drive(progress, firstFrom, seed)
+      begin(seed) match
+        case Right(progress) => animating = true; drive(progress, firstFrom, seed)
+        case Left(err)       => report(err)
 
     // Resume the suspended cascade against the table as the player left it, then
     // clear the prompt; the resumed advance may itself pause again, looping the same way.
     def completeManual(prompt: ManualPrompt): Unit =
       manualPause.set(None)
       animating = true
-      Engine.step(state.now(), prompt.rest, prompt.seed).foreach(drive(_, None, prompt.seed))
+      continue(Engine.step(state.now(), prompt.rest, prompt.seed), None, prompt.seed)
 
     // Fill the pending choice with the stack the player clicked and resume the
     // cascade; like a manual resume, the next advance may pause again (a second
@@ -476,7 +518,7 @@ object GameView:
     def resolveChoice(prompt: ChoicePrompt, stack: StackId): Unit =
       choicePause.set(None)
       animating = true
-      Engine.step(state.now(), Engine.applyChoice(prompt.rest, stack), prompt.seed).foreach(drive(_, None, prompt.seed))
+      continue(Engine.step(state.now(), Engine.applyChoice(prompt.rest, stack), prompt.seed), None, prompt.seed)
 
     // Abandon a pending choice: the rest of its cascade is dropped, the board returns
     // to normal. The table keeps whatever the cascade settled before the pause.
@@ -490,7 +532,7 @@ object GameView:
     def resolveCardChoice(prompt: CardChoicePrompt, card: CardId): Unit =
       cardChoicePause.set(None)
       animating = true
-      Engine.step(state.now(), Engine.applyCardChoice(prompt.rest, card), prompt.seed).foreach(drive(_, None, prompt.seed))
+      continue(Engine.step(state.now(), Engine.applyCardChoice(prompt.rest, card), prompt.seed), None, prompt.seed)
 
     // Abandon a pending card choice, dropping the rest of its cascade.
     def cancelCardChoice(): Unit =
@@ -864,6 +906,22 @@ object GameView:
   private val fontStep = 1.1
   private val minFont  = 0.6
   private val maxFont  = 2.0
+
+  // A cascade failure rendered as one plain sentence for the player. A `Same`/`Owned`
+  // reference that named no stack reads as the owning player and the missing role;
+  // the rest name the offending stack or card. (Player indices are 0-based internally,
+  // shown 1-based.)
+  private def engineErrorMessage(err: EngineError): String = err match
+    case EngineError.UnknownStack(id)    => s"This action targets a stack that doesn't exist: ${id.value}."
+    case EngineError.UnknownCard(id)     => s"This action targets a card that doesn't exist: ${id.value}."
+    case EngineError.UnknownCardDef(id)  => s"This action targets a card type that doesn't exist: ${id.value}."
+    case EngineError.EmptyStack(id)      => s"This action needs a card from an empty stack: ${id.value}."
+    case EngineError.UnresolvedRole(role, player) =>
+      s"""Player ${player + 1} has no "$role" stack for this action to target."""
+    case EngineError.UnresolvedSame(role, owner) =>
+      owner match
+        case Some(p) => s"""Player ${p + 1} has no "$role" stack for this action to target."""
+        case None    => s"""There is no shared "$role" stack for this action to target."""
 
   // Kept in step with the .stack.shuffling animation duration in engine.css.
   private val shuffleAnimMs = 450

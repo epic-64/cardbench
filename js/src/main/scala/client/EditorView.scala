@@ -65,8 +65,16 @@ object EditorView:
     // is authored. Rebuilds only when the mode flips, so picking within a mode never
     // disturbs the row. `allowChoice` is false for a trigger, where "choose at play
     // time" is meaningless — a trigger only ever names where a card actually landed.
-    def stackRefField(name: String, refSig: Signal[StackRef], onChange: StackRef => Unit, allowChoice: Boolean = true): Element =
-      val options = if allowChoice then refModeOptions else refModeOptions.filter(_._2 != "choice")
+    def stackRefField(
+      name: String,
+      refSig: Signal[StackRef],
+      onChange: StackRef => Unit,
+      allowChoice: Boolean = true,
+      allowSame: Boolean = true,
+    ): Element =
+      val options = refModeOptions
+        .filter(o => allowChoice || o._2 != "choice")
+        .filter(o => allowSame || o._2 != "same")
       div(
         cls := "editor-ref",
         child <-- refSig.map(refMode).distinct.map { mode =>
@@ -76,12 +84,14 @@ object EditorView:
             mode,
             {
               case "role"   => onChange(StackRef.Owned(""))
+              case "same"   => onChange(StackRef.Same(""))
               case "choice" => onChange(StackRef.Choice)
               case _        => onChange(StackRef.Fixed(StackId("")))
             },
           )
           val input = mode match
             case "role"   => idSelectField("role of current player", roleIds, refSig.map(roleOf).distinct, v => onChange(StackRef.Owned(v)))
+            case "same"   => idSelectField("role of same owner", roleIds, refSig.map(sameOf).distinct, v => onChange(StackRef.Same(v)))
             case "choice" => span(cls := "editor-ref-note", "Player picks a stack during play")
             case _        => idSelectField("stack", stackIds, refSig.map(fixedOf).distinct, v => onChange(StackRef.Fixed(StackId(v))))
           div(cls := "editor-ref-inner", modeField, input)
@@ -253,7 +263,7 @@ object EditorView:
           cls := "editor-rule-head",
           span(cls := "rule-badge", "When"),
           idSelectField("Card", cardIds, triggerCard, v => setTriggerCard(i, CardDefId(v))),
-          stackRefField("lands on stack", triggerToRef, ref => setTriggerTo(i, ref), allowChoice = false),
+          stackRefField("lands on stack", triggerToRef, ref => setTriggerTo(i, ref), allowChoice = false, allowSame = false),
           removeButton(() => setRules(rs => rs.patch(i, Nil, 1))),
         ),
         effectsBlock(
@@ -511,19 +521,45 @@ object EditorView:
     def updateButton(i: Int)(f: StackButton => StackButton): Unit =
       setButtons(bs => bs.lift(i).fold(bs)(b => bs.updated(i, f(b))))
 
-    // A button is a click-triggered ruleset: the stack it sits on, its label, and the
-    // same effects editor a rule uses — so a button can run a whole list of effects,
-    // each targeting a fixed stack or the current player's role.
+    // A button's host: a toggle between sitting on one fixed stack and sitting on every
+    // stack of a role (one per player). The matching input follows — a stack drop-down
+    // or a role drop-down — rebuilding only when the mode flips. Mirrors `stackRefField`.
+    def buttonHostField(i: Int): Element =
+      def hostSig: Signal[ButtonHost] =
+        draft.signal.map(_.setup.buttons.lift(i).fold(ButtonHost.OnStack(StackId("")): ButtonHost)(_.host)).distinct
+      div(
+        cls := "editor-ref",
+        child <-- hostSig.map(hostMode).distinct.map { mode =>
+          val modeField = selectField(
+            "host",
+            buttonHostOptions,
+            mode,
+            {
+              case "role" => updateButton(i)(_.copy(host = ButtonHost.OnRole("")))
+              case _      => updateButton(i)(_.copy(host = ButtonHost.OnStack(StackId(""))))
+            },
+          )
+          val input = mode match
+            case "role" =>
+              idSelectField("role", roleIds, hostSig.map(hostRoleOf).distinct, v => updateButton(i)(_.copy(host = ButtonHost.OnRole(v))))
+            case _ =>
+              idSelectField("stack", stackIds, hostSig.map(hostStackOf).distinct, v => updateButton(i)(_.copy(host = ButtonHost.OnStack(StackId(v)))))
+          div(cls := "editor-ref-inner", modeField, input)
+        },
+      )
+
+    // A button is a click-triggered ruleset: where it sits (a fixed stack or every stack
+    // of a role), its label, and the same effects editor a rule uses — so a button can
+    // run a whole list of effects, each targeting a fixed stack, the current player's
+    // role, or the host owner's role.
     def buttonRow(i: Int): Element =
       val b = draft.now().setup.buttons(i)
-      def onStack: Signal[String] =
-        draft.signal.map(_.setup.buttons.lift(i).fold("")(_.stackId.value)).distinct
       div(
         cls := "editor-rule",
         div(
           cls := "editor-rule-head",
           span(cls := "rule-badge", "Button"),
-          idSelectField("on stack", stackIds, onStack, v => updateButton(i)(_.copy(stackId = StackId(v)))),
+          buttonHostField(i),
           textField("Label", b.label, v => updateButton(i)(_.copy(label = v))),
           removeButton(() => setButtons(bs => bs.patch(i, Nil, 1))),
         ),
@@ -537,7 +573,7 @@ object EditorView:
     val buttonsSection = section(
       "Buttons",
       "+ Add button",
-      () => setButtons(_ :+ StackButton(StackId(""), "Button", Nil)),
+      () => setButtons(_ :+ StackButton(ButtonHost.OnStack(StackId("")), "Button", Nil)),
       draft.signal.map(_.setup.buttons.size),
       buttonRow,
     )
@@ -760,12 +796,14 @@ object EditorView:
   private val refModeOptions = List(
     "Stack id"                -> "stack",
     "Stack of current player" -> "role",
+    "Stack of same owner"     -> "same",
     "Player choice"           -> "choice",
   )
 
   private def refMode(ref: StackRef): String = ref match
     case _: StackRef.Fixed => "stack"
     case _: StackRef.Owned => "role"
+    case _: StackRef.Same  => "same"
     case StackRef.Choice   => "choice"
 
   private def fixedOf(ref: StackRef): String = ref match
@@ -774,6 +812,26 @@ object EditorView:
   private def roleOf(ref: StackRef): String = ref match
     case StackRef.Owned(role) => role
     case _                    => ""
+  private def sameOf(ref: StackRef): String = ref match
+    case StackRef.Same(role) => role
+    case _                   => ""
+
+  // A button's host: one fixed stack, or every stack of a role (one per player).
+  private val buttonHostOptions = List(
+    "On stack"          -> "stack",
+    "On stacks of role" -> "role",
+  )
+
+  private def hostMode(host: ButtonHost): String = host match
+    case _: ButtonHost.OnStack => "stack"
+    case _: ButtonHost.OnRole  => "role"
+
+  private def hostStackOf(host: ButtonHost): String = host match
+    case ButtonHost.OnStack(id) => id.value
+    case _                      => ""
+  private def hostRoleOf(host: ButtonHost): String = host match
+    case ButtonHost.OnRole(role) => role
+    case _                       => ""
 
   private def effectKind(e: Effect): String = e match
     case _: Effect.Deal       => "deal"
