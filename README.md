@@ -1,4 +1,4 @@
-# Gigadev
+# Cardbench
 
 A Scala 3 fullstack app: Cask (JVM server) + ScalaJS + Laminar (client), as a
 cross-project with shared code. Scaffolded from a Hello World template.

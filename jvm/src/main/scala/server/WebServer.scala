@@ -112,7 +112,7 @@ object WebServer extends MainRoutes:
     Runtime.getRuntime.addShutdownHook(Thread(() => undertow.stop()))
     undertow.start()
     logger.info("=" * 60)
-    logger.info("Gigadev server started")
+    logger.info("Cardbench server started")
     logger.info(s"Listening on http://$host:$port")
     if Config.devLiveAssets then logger.info(s"Dev live assets: serving from ${Config.devStaticDir} (no cache)")
     logger.info("=" * 60)

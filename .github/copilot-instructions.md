@@ -1,5 +1,5 @@
 # Instructions
-This is Gigadev: a Scala 3 fullstack project using Cask (JVM server) and
+This is Cardbench: a Scala 3 fullstack project using Cask (JVM server) and
 ScalaJS + Laminar (client), as a cross-project with shared code.
 
 Preferred code style:

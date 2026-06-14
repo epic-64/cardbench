@@ -17,7 +17,7 @@ import scala.util.Try
   * deliberate "delete everything" stays deleted.
   */
 object GameStore:
-  private val key = "gigadev.library"
+  private val key = "cardbench.library"
 
   /** Every stored game, in saved order; an unreadable or absent store reads as
     * empty rather than throwing.
@@ -70,7 +70,7 @@ object GameStore:
   // rules are rebuilt from the definition on load, so editing a game never leaves
   // a saved table referring to a stale rulebook.
 
-  private def gameKey(id: String): String = s"gigadev.game.$id"
+  private def gameKey(id: String): String = s"cardbench.game.$id"
 
   /** The saved live table for a game, if one is in progress; `None` when the game
     * has never been played (or was restarted) and an unreadable save reads as none.

@@ -1,7 +1,7 @@
 {
-  "name": "gigadev",
+  "name": "cardbench",
   "version": "0.1.0",
-  "description": "Gigadev — Scala 3 + Cask + ScalaJS + Laminar",
+  "description": "Cardbench — Scala 3 + Cask + ScalaJS + Laminar",
   "private": true,
   "scripts": {
     "minify:assets": "node scripts/minify-static-with-vite.mjs",
