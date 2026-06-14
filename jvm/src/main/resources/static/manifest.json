@@ -1,7 +1,7 @@
 {
-  "name": "Gigadev",
-  "short_name": "gigadev",
-  "description": "Gigadev — Scala 3 + Cask + ScalaJS + Laminar",
+  "name": "Cardbench",
+  "short_name": "cardbench",
+  "description": "Cardbench — Scala 3 + Cask + ScalaJS + Laminar",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0a0a0f",

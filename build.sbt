@@ -15,7 +15,7 @@ lazy val root = project
   .in(file("."))
   .aggregate(app.js, app.jvm)
   .settings(
-    name := "gigadev",
+    name := "cardbench",
     publish / skip := true,
   )
 
@@ -25,7 +25,7 @@ lazy val app = crossProject(JSPlatform, JVMPlatform)
   .jsConfigure(_.withId("js"))
   .jvmConfigure(_.withId("jvm"))
   .settings(
-    name := "gigadev",
+    name := "cardbench",
     // Quiet ScalaTest reporter; failures + final summary still print.
     Test / testOptions += Tests.Argument(TestFrameworks.ScalaTest, "-oNCXEHLOPQRM"),
     libraryDependencies ++= Seq(

@@ -1,13 +1,13 @@
 # Generic Card Engine — Design Doc v0
 
 A minimal, game-agnostic card engine for **playtesting**. It knows nothing about
-Gigadev's rules — only cards, stacks, and the moves you can make on a table. The
+Cardbench's rules — only cards, stacks, and the moves you can make on a table. The
 goal is to get *something on the table you can shuffle and deal* so design
 decisions can be made by playing, not arguing.
 
 > **Scope discipline:** this is a toy table, not a game. No turns, no scoring, no
 > hand, no rules engine. Just cards, stacks, and four verbs. Everything
-> Gigadev-specific is built *on top of* this later.
+> Cardbench-specific is built *on top of* this later.
 
 ---
 
@@ -248,7 +248,7 @@ order; each rests on the last.
 | 8 | **Render the table**                                                                                                   | Laminar table view                 | Loading a setup shows the stacks at their positions, top card and count visible, backs for face-down.                                                                    |
 | 9 | **Playtest controls**                                                                                                  | Shuffle / Deal / flip wiring       | You can shuffle a deck and deal cards onto an empty stack by clicking, in the browser.                                                                                   |
 
-After increment 9 you have a table you can actually play on. Gigadev's rules
+After increment 9 you have a table you can actually play on. Cardbench's rules
 (requests, debt, phases) become a *separate* layer that calls these verbs — not
 part of this engine.
 
@@ -302,7 +302,7 @@ The shell animates these steps one after another rather than snapping to the end
 ## Deliberately out of scope for v0
 
 - A **hand** (cards are placed on the table; no private zone).
-- **Turns, phases, scoring, win conditions** — all Gigadev rules.
+- **Turns, phases, scoring, win conditions** — all Cardbench rules.
 - **Per-card backs**, animations, drag-and-drop (clicks/buttons suffice).
 - **Server-side state, multiplayer, persistence.**
 - **Undo/history** (re-deriving from a seed + move log can come later if wanted).

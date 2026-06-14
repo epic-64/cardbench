@@ -1,6 +1,6 @@
 // Minimal network-first service worker: serves the freshest content when
 // online and falls back to the cached app shell when offline.
-const CACHE = 'gigadev-v1';
+const CACHE = 'cardbench-v1';
 const SHELL = ['/', '/static/dist/app-bundle.css', '/static/dist/main.js', '/static/manifest.json'];
 
 self.addEventListener('install', (event) => {

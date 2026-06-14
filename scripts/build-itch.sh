@@ -17,7 +17,7 @@ cd "$(dirname "$0")/.."
 STATIC_DIST="jvm/src/main/resources/static/dist"
 STATIC_DIR="jvm/src/main/resources/static"
 OUT_DIR="target/itch/files"
-ZIP_PATH="target/itch/gigadev-itch.zip"
+ZIP_PATH="target/itch/cardbench-itch.zip"
 
 cyan() { printf '\033[36m%s\033[0m\n' "$1"; }
 green() { printf '\033[32m%s\033[0m\n' "$1"; }
@@ -40,7 +40,7 @@ cat > "$OUT_DIR/index.html" <<'HTML'
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>Gigadev</title>
+    <title>Cardbench</title>
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#4ade80" />
     <meta name="mobile-web-app-capable" content="yes" />
@@ -54,7 +54,7 @@ cat > "$OUT_DIR/index.html" <<'HTML'
     <div id="app" class="app-container">
       <div class="app-loader">
         <div class="app-spinner"></div>
-        <div class="app-loading-text">Loading Gigadev…</div>
+        <div class="app-loading-text">Loading Cardbench…</div>
       </div>
     </div>
   </body>

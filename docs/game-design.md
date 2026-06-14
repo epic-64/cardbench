@@ -1,4 +1,4 @@
-# Gigadev: The Card Game — Design Doc v1
+# Cardbench: The Card Game — Design Doc v1
 
 A solo (optionally co-op) roguelike deckbuilder about running a dev shop.
 Designed to be **playable as a real physical card game**; the browser version
