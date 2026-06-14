@@ -31,10 +31,14 @@ object StackId:
   * resolves at run time to the stack with that role owned by the *current* player
   * (see `GameState.currentPlayer` and `Engine.resolveRef`). One `Owned`-referencing
   * rule serves every player, so a turn-based game needs no per-player duplicates.
+  * `Choice` defers the target to *play time*: the cascade pauses and the player
+  * clicks a stack to fill it in (see `Progress.Choose`, `Engine.applyChoice`), so a
+  * rule can let whoever's acting decide where a card goes.
   */
 enum StackRef:
   case Fixed(id: StackId)
   case Owned(role: String)
+  case Choice
 
 object StackRef:
   // A concrete-stack reference straight from its id string — the common case, so
@@ -42,17 +46,20 @@ object StackRef:
   def apply(id: String): StackRef = Fixed(StackId(id))
 
   // On the wire a `Fixed` ref is just its bare string — exactly the shape every
-  // game saved before roles existed already uses, so those files still load — and
-  // an `Owned` ref is a small object carrying its role.
+  // game saved before roles existed already uses, so those files still load — an
+  // `Owned` ref is a small object carrying its role, and a `Choice` ref a small
+  // object flagged `choice` (so it can't be mistaken for a role).
   given ReadWriter[StackRef] = readwriter[ujson.Value].bimap(
     {
       case StackRef.Fixed(id)   => ujson.Str(id.value)
       case StackRef.Owned(role) => ujson.Obj("role" -> ujson.Str(role))
+      case StackRef.Choice      => ujson.Obj("choice" -> ujson.Bool(true))
     },
     {
-      case ujson.Str(id)  => StackRef.Fixed(StackId(id))
-      case obj: ujson.Obj => StackRef.Owned(obj("role").str)
-      case other          => sys.error(s"Unknown stack reference: $other")
+      case ujson.Str(id)                                  => StackRef.Fixed(StackId(id))
+      case obj: ujson.Obj if obj.value.contains("choice") => StackRef.Choice
+      case obj: ujson.Obj                                 => StackRef.Owned(obj("role").str)
+      case other                                          => sys.error(s"Unknown stack reference: $other")
     },
   )
 
@@ -129,6 +136,15 @@ enum Progress:
   case Done(state: GameState)
   case Ran(state: GameState, steps: List[Step], rest: List[Pending])
   case Await(state: GameState, card: CardId, description: String, rest: List[Pending])
+  /** A cascade halted on a `StackRef.Choice`: the next effect can't resolve until
+    * the player names a stack. `card` anchors the prompt (the triggering card, or
+    * the empty `noCard` for a button's own effect); `slot` labels which target is
+    * being chosen ("from", "to", "stack"); `rest` is the *whole* remaining queue,
+    * its head still holding the unfilled `Choice`. The shell fills it with
+    * `Engine.applyChoice` and steps on. Like `Await`, held outside `Step` because a
+    * pause is a boundary, not a step to animate.
+    */
+  case Choose(state: GameState, card: CardId, slot: String, rest: List[Pending])
 
 /** Something that just happened on the table — the signal the effect system
   * reacts to. The only kind so far: a card came to rest on a stack. A rule whose

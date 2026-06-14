@@ -430,3 +430,25 @@
   white-space: pre-wrap;
   line-height: 1.4;
 }
+
+/* The stack-choice prompt reuses the manual dialog's frame but wears an accent
+   border, so a "pick a stack" pause reads as a distinct mode from a by-hand one. */
+.choice-dialog {
+  border-color: var(--accent);
+}
+
+/* While a choice is pending every stack is pickable: an accent ring and a pointer
+   cursor invite the click that fills the choice. The ring brightens on hover so the
+   stack under the cursor reads as the one about to be picked. */
+.stack-choosable {
+  cursor: pointer;
+}
+
+.stack-choosable .card {
+  outline: 2px dashed var(--accent);
+  outline-offset: 3px;
+}
+
+.stack-choosable:hover .card {
+  outline-style: solid;
+}

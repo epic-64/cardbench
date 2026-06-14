@@ -609,12 +609,22 @@
   margin-left: auto;
 }
 
-/* One stack reference: the Stack/Role mode select sitting beside its id-or-role
-   drop-down, kept on one line so the pair reads as a single field. */
+/* One stack reference: the mode select sitting beside its id-or-role drop-down,
+   kept on one line so the pair reads as a single field. */
 .editor-ref-inner {
   display: flex;
   align-items: flex-end;
   gap: var(--gap-sm);
+}
+
+/* The placeholder beside a "Player choice" reference, where there is no id to author
+   — it just notes that the stack is picked at play time. Aligned to the mode select's
+   baseline so it reads as that field's value. */
+.editor-ref-note {
+  align-self: center;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-style: italic;
 }
 
 /* Variables reference list: a token chip beside its description, one per row. */

@@ -58,28 +58,33 @@ object EditorView:
     val roleIds  = draft.signal.map(_.setup.stacks.collect { case s if s.owner.isDefined && s.role.nonEmpty => s.role }.distinct).distinct
 
     // One authored stack reference: a mode toggle between a *specific stack* (a fixed
-    // id, the only kind before player ownership) and the *current player's* stack of
-    // a given role, with the matching id/role drop-down beside it. Rebuilds only when
-    // the mode flips, so picking within a mode never disturbs the row.
-    def stackRefField(name: String, refSig: Signal[StackRef], onChange: StackRef => Unit): Element =
+    // id, the only kind before player ownership), the *current player's* stack of a
+    // given role, and a *player choice* (deferred to play time, where a dialog asks
+    // the acting player to click a stack — see `Progress.Choose`). The matching input
+    // sits beside the mode: an id drop-down, a role drop-down, or a note that nothing
+    // is authored. Rebuilds only when the mode flips, so picking within a mode never
+    // disturbs the row. `allowChoice` is false for a trigger, where "choose at play
+    // time" is meaningless — a trigger only ever names where a card actually landed.
+    def stackRefField(name: String, refSig: Signal[StackRef], onChange: StackRef => Unit, allowChoice: Boolean = true): Element =
+      val options = if allowChoice then refModeOptions else refModeOptions.filter(_._2 != "choice")
       div(
         cls := "editor-ref",
-        child <-- refSig.map(_.isInstanceOf[StackRef.Owned]).distinct.map { owned =>
-          val mode = selectField(
+        child <-- refSig.map(refMode).distinct.map { mode =>
+          val modeField = selectField(
             name,
-            refModeOptions,
-            if owned then "role" else "stack",
+            options,
+            mode,
             {
-              case "role" => onChange(StackRef.Owned(""))
-              case _      => onChange(StackRef.Fixed(StackId("")))
+              case "role"   => onChange(StackRef.Owned(""))
+              case "choice" => onChange(StackRef.Choice)
+              case _        => onChange(StackRef.Fixed(StackId("")))
             },
           )
-          val input =
-            if owned then
-              idSelectField("role of current player", roleIds, refSig.map(roleOf).distinct, v => onChange(StackRef.Owned(v)))
-            else
-              idSelectField("stack", stackIds, refSig.map(fixedOf).distinct, v => onChange(StackRef.Fixed(StackId(v))))
-          div(cls := "editor-ref-inner", mode, input)
+          val input = mode match
+            case "role"   => idSelectField("role of current player", roleIds, refSig.map(roleOf).distinct, v => onChange(StackRef.Owned(v)))
+            case "choice" => span(cls := "editor-ref-note", "Player picks a stack during play")
+            case _        => idSelectField("stack", stackIds, refSig.map(fixedOf).distinct, v => onChange(StackRef.Fixed(StackId(v))))
+          div(cls := "editor-ref-inner", modeField, input)
         },
       )
 
@@ -235,7 +240,7 @@ object EditorView:
           cls := "editor-rule-head",
           span(cls := "rule-badge", "When"),
           idSelectField("Card", cardIds, triggerCard, v => setTriggerCard(i, CardDefId(v))),
-          stackRefField("lands on stack", triggerToRef, ref => setTriggerTo(i, ref)),
+          stackRefField("lands on stack", triggerToRef, ref => setTriggerTo(i, ref), allowChoice = false),
           removeButton(() => setRules(rs => rs.patch(i, Nil, 1))),
         ),
         effectsBlock(
@@ -735,16 +740,26 @@ object EditorView:
   // across so retyping doesn't blank the row.
   private val effectKindOptions = List("Deal" -> "deal", "Shuffle" -> "shuffle", "Manual" -> "manual", "End turn" -> "endturn")
 
-  // A stack reference is a tagged choice between a fixed stack and the current
-  // player's stack of a role; these read its two sides for the drop-downs.
-  private val refModeOptions = List("Stack" -> "stack", "Role" -> "role")
+  // A stack reference is a tagged choice between a fixed stack, the current player's
+  // stack of a role, and a target the player picks at play time. The labels spell
+  // each out so the form reads plainly rather than as bare "stack/role".
+  private val refModeOptions = List(
+    "Stack id"                -> "stack",
+    "Stack of current player" -> "role",
+    "Player choice"           -> "choice",
+  )
+
+  private def refMode(ref: StackRef): String = ref match
+    case _: StackRef.Fixed => "stack"
+    case _: StackRef.Owned => "role"
+    case StackRef.Choice   => "choice"
 
   private def fixedOf(ref: StackRef): String = ref match
     case StackRef.Fixed(id) => id.value
-    case _: StackRef.Owned  => ""
+    case _                  => ""
   private def roleOf(ref: StackRef): String = ref match
     case StackRef.Owned(role) => role
-    case _: StackRef.Fixed    => ""
+    case _                    => ""
 
   private def effectKind(e: Effect): String = e match
     case _: Effect.Deal    => "deal"
