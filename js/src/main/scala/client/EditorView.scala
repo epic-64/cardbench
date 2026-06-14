@@ -590,7 +590,7 @@ object EditorView:
           tabButton("design", "Design"),
           tabButton("stacks", "Stacks"),
           tabButton("buttons", "Buttons"),
-          tabButton("rules", "Rules"),
+          tabButton("rules", "Effects"),
         ),
         tabPanel("cards", cardsSection),
         tabPanel("design", designSection),
