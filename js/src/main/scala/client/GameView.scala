@@ -716,7 +716,7 @@ object GameView:
   private val cascadeStep = 26
 
   // Wheel zoom: multiplicative step per notch, bounded so the table can't vanish.
-  private val zoomStep = 1.1
+  private val zoomStep = 1.03
   private val minZoom  = 0.3
   private val maxZoom  = 3.0
 
