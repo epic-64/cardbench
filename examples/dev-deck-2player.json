@@ -63,15 +63,15 @@
       { "id": "discard2", "label": "Discard 2", "position": { "x": 980, "y": 740 }, "facing": "up", "contents": [], "group": "group-1", "owner": 1, "role": "discard" }
     ],
     "buttons": [
-      { "stackId": "hand1", "label": "draw 4", "action": { "$type": "DealFrom", "stack": "deck1", "count": 4 } },
-      { "stackId": "hand1", "label": "discard", "action": { "$type": "DealTo", "stack": "discard1", "count": 10 } },
-      { "stackId": "discard1", "label": "refresh deck", "action": { "$type": "DealTo", "stack": "deck1", "count": 100 } },
-      { "stackId": "hand2", "label": "draw 4", "action": { "$type": "DealFrom", "stack": "deck2", "count": 4 } },
-      { "stackId": "hand2", "label": "discard", "action": { "$type": "DealTo", "stack": "discard2", "count": 10 } },
-      { "stackId": "discard2", "label": "refresh deck", "action": { "$type": "DealTo", "stack": "deck2", "count": 100 } },
-      { "stackId": "event-discard", "label": "refresh events", "action": { "$type": "DealTo", "stack": "events", "count": 100 } },
-      { "stackId": "feature-discard", "label": "refresh features", "action": { "$type": "DealTo", "stack": "features", "count": 100 } },
-      { "stackId": "project-zone", "label": "new project", "action": { "$type": "DealFrom", "stack": "features", "count": 3 } }
+      { "stackId": "hand1", "label": "draw 4", "effects": [ { "$type": "Deal", "from": { "role": "deck" }, "to": { "role": "hand" }, "count": 4 } ] },
+      { "stackId": "hand1", "label": "discard", "effects": [ { "$type": "Deal", "from": { "role": "hand" }, "to": { "role": "discard" }, "count": 10 } ] },
+      { "stackId": "discard1", "label": "refresh deck", "effects": [ { "$type": "Deal", "from": { "role": "discard" }, "to": { "role": "deck" }, "count": 100 }, { "$type": "Shuffle", "stack": { "role": "deck" } } ] },
+      { "stackId": "hand2", "label": "draw 4", "effects": [ { "$type": "Deal", "from": { "role": "deck" }, "to": { "role": "hand" }, "count": 4 } ] },
+      { "stackId": "hand2", "label": "discard", "effects": [ { "$type": "Deal", "from": { "role": "hand" }, "to": { "role": "discard" }, "count": 10 } ] },
+      { "stackId": "discard2", "label": "refresh deck", "effects": [ { "$type": "Deal", "from": { "role": "discard" }, "to": { "role": "deck" }, "count": 100 }, { "$type": "Shuffle", "stack": { "role": "deck" } } ] },
+      { "stackId": "event-discard", "label": "refresh events", "effects": [ { "$type": "Deal", "from": "event-discard", "to": "events", "count": 100 } ] },
+      { "stackId": "feature-discard", "label": "refresh features", "effects": [ { "$type": "Deal", "from": "feature-discard", "to": "features", "count": 100 } ] },
+      { "stackId": "project-zone", "label": "new project", "effects": [ { "$type": "Deal", "from": "features", "to": "project-zone", "count": 3 } ] }
     ],
     "groups": [
       { "id": "group-0", "name": "Player 1" },
