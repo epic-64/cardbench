@@ -92,56 +92,28 @@ object Facing:
     },
   )
 
-/** A predicate over card definitions, naming the kinds of card an effect applies to.
-  * `anyOf` is an allow-list of definition ids: a card matches when its def is in the
-  * list, and an *empty* list matches *every* card — the unfiltered default. A filtered
-  * `Deal` moves the top-most *matching* card rather than the literal top (so "remove a
-  * debt card from the deck" reaches past whatever sits above it); a filtered `MoveChosen`
-  * only lets the player pick a matching card. Defaulted to empty so an effect authored
-  * before filters existed matches every card exactly as it did before.
-  */
-case class CardFilter(anyOf: List[CardDefId] = Nil) derives ReadWriter:
-  /** Whether `defId` is one of the kinds this filter names — always true for the empty
-    * (match-everything) filter.
-    */
-  def matches(defId: CardDefId): Boolean = anyOf.isEmpty || anyOf.contains(defId)
-
-/** A yes/no test an `Effect.If` branches on. The only kind so far: `CountAtLeast` holds
-  * when the stack `where` — a fixed id, the current player's role-stack (`StackRef.Owned`),
-  * or, once anchored, the host owner's (`StackRef.Same`) — holds at least `n` cards matching
-  * `filter`. An unresolvable or missing `where` counts as not holding, so a misconfigured
-  * condition simply takes the else branch rather than aborting the cascade.
-  */
-enum Condition derives ReadWriter:
-  case CountAtLeast(where: StackRef, filter: CardFilter, n: Int)
-
 /** What a rule does when it fires. `Deal` moves `count` cards (default 1) from
-  * the top of one stack onto the top of another, restricted to cards matching its
-  * `filter` (an empty filter, the default, matches every card and so deals the literal
-  * top); each dealt card takes on the destination stack's `facing` as it lands (see
-  * `Stack`), and each move is itself an `Event`, so it can cascade into further rules.
-  * `Shuffle` reorders one stack in place. `Manual` is the escape hatch: it expresses any
-  * effect the engine can't model by pausing the cascade and showing the player a prompt —
-  * the player carries the effect out by hand, then marks it done, and the rest of the
+  * the top of one stack onto the top of another; each dealt card takes on the
+  * destination stack's `facing` as it lands (see `Stack`), and each move is
+  * itself an `Event`, so it can cascade into further rules. `Shuffle` reorders
+  * one stack in place. `Manual` is the escape hatch: it expresses any effect the
+  * engine can't model by pausing the cascade and showing the player a prompt — the
+  * player carries the effect out by hand, then marks it done, and the rest of the
   * cascade resumes against whatever table they left behind. `EndTurn` advances the
   * turn to the next player (see `GameState.currentPlayer`, `Engine.endTurn`), so
   * "pass the turn" is just another effect a button or rule can run. `MoveChosen`
   * lets the player pick the *card* to move — clicking the top of a pile, or a
-  * specific card in a row, narrowed to cards matching its `filter` — and sends it to
-  * `to`; the cascade pauses for the pick exactly as `Manual` pauses (see
-  * `Progress.ChooseCard`, `Engine.applyCardChoice`), and `card` is the runtime-only slot
-  * the pick fills (always empty when authored). `If` branches the cascade on a `Condition`,
-  * splicing in its `thenDo` effects when the condition holds and its `elseDo` effects when
-  * it does not (see `Engine.step`) — the one effect that reads the table before acting.
+  * specific card in a row — and sends it to `to`; the cascade pauses for the pick
+  * exactly as `Manual` pauses (see `Progress.ChooseCard`, `Engine.applyCardChoice`),
+  * and `card` is the runtime-only slot the pick fills (always empty when authored).
   * Everything richer composes from these.
   */
 enum Effect derives ReadWriter:
-  case Deal(from: StackRef, to: StackRef, count: Int = 1, filter: CardFilter = CardFilter())
+  case Deal(from: StackRef, to: StackRef, count: Int = 1)
   case Shuffle(stack: StackRef)
   case Manual(description: String)
   case EndTurn
-  case MoveChosen(to: StackRef, card: Option[CardId] = None, filter: CardFilter = CardFilter())
-  case If(cond: Condition, thenDo: List[Effect] = Nil, elseDo: List[Effect] = Nil)
+  case MoveChosen(to: StackRef, card: Option[CardId] = None)
 
 /** One atomic, animatable change in a cascade: relocate a single card, flip one,
   * reorder a stack, or pass the turn. `Engine.dropSteps` emits these in order so the
