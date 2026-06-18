@@ -345,10 +345,6 @@ case class Stack(
   // before player ownership load as all-global, role-less stacks.
   owner: Option[Int] = None,
   role: String = "",
-  // An optional accent (a CSS colour) the stack glows with while empty — a visual
-  // cue marking a slot waiting to be filled. `None` = no glow. Defaulted so games
-  // authored before glows load unchanged.
-  color: Option[String] = None,
 ) derives ReadWriter
 
 /** The whole table: the single source of truth. `catalog` is the registry of
