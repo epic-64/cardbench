@@ -282,9 +282,6 @@ object EditorView:
     )
 
     // ── setup (stacks) ─────────────────────────────────────────────────────────
-    // The accent a stack glow seeds to when first enabled — a warm amber that reads
-    // clearly on the dark board; the colour picker tunes it from there.
-    val defaultGlow = "#ffd54a"
     def setStacks(f: List[StackSpec] => List[StackSpec]): Unit =
       draft.update(d => d.copy(setup = d.setup.copy(stacks = f(d.setup.stacks))))
     def updateStack(i: Int)(f: StackSpec => StackSpec): Unit =
@@ -325,9 +322,6 @@ object EditorView:
       // appears and disappears as the layout select changes (the row itself only
       // rebuilds on add/remove, so this has to be its own signal).
       val isRow = draft.signal.map(_.setup.stacks.lift(i).fold(false)(_.layout == Layout.Row)).distinct
-      // The glow colour field only shows once a glow is enabled; like Width, it
-      // toggles on its own signal since the row itself only rebuilds on add/remove.
-      val glowOn = draft.signal.map(_.setup.stacks.lift(i).fold(false)(_.color.isDefined)).distinct
       div(
         cls := "editor-stack",
         // Drop onto a stack tile = drop the dragged stack *before* this one, into
@@ -375,15 +369,6 @@ object EditorView:
           cls := "editor-row",
           selectField("Owner", ownerOptions(), s.owner, o => updateStack(i)(_.copy(owner = o))),
           textField("Role", s.role, v => updateStack(i)(_.copy(role = v))),
-        ),
-        // Glow: an accent the stack pulses with while empty. The checkbox sets or
-        // clears the colour (seeding a default amber); the picker tunes it.
-        div(
-          cls := "editor-row",
-          checkboxField("Glow when empty", s.color.isDefined, on => updateStack(i)(st => st.copy(color = if on then Some(st.color.getOrElse(defaultGlow)) else None))),
-          child <-- glowOn.map:
-            case true  => colorField("Glow colour", draft.now().setup.stacks.lift(i).flatMap(_.color).getOrElse(defaultGlow), v => updateStack(i)(_.copy(color = Some(v))))
-            case false => emptyNode,
         ),
         contentsSubsection(i),
       )
